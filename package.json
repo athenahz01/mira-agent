@@ -9,7 +9,7 @@
     "build": "next build",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "db:types": "node scripts/db-types.mjs",
+    "db:types": "node --env-file-if-exists=.env.local scripts/db-types.mjs",
     "seed": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/seed.ts",
     "test:rls": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-rls.ts"
   },
@@ -53,6 +53,9 @@
     "typescript": "^5.7.2"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["supabase", "unrs-resolver"]
+    "onlyBuiltDependencies": [
+      "supabase",
+      "unrs-resolver"
+    ]
   }
 }
