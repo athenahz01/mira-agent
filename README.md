@@ -10,7 +10,8 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
 - Railway worker code under `workers/`
 - Anthropic for voice and media-kit generation
 - Gmail OAuth helpers for a later send/read phase
-- Apify, Hunter.io, and Playwright in later phases
+- Hunter.io and Playwright for contact enrichment
+- Apify in a later sourcing phase
 
 ## Setup
 
@@ -45,6 +46,8 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/api/gmail/callback
    GMAIL_TOKEN_ENCRYPTION_KEY=
    HUNTER_RATE_LIMIT_PER_MINUTE=10
+   SUPABASE_URL=
+   WORKER_KIND=page_scrape
    ```
 
    Generate the Gmail encryption key with:
@@ -113,13 +116,41 @@ HUNTER_RATE_LIMIT_PER_MINUTE=10
 
 The free Hunter tier is 25 searches per month, which is enough for development smoke tests but not enough for production enrichment. Mira also keeps a conservative per-process rate limiter around all Hunter calls.
 
+## Background Worker
+
+The background worker lives in `workers/` and is designed for Railway. Phase 2c uses it for `page_scrape` jobs: Playwright checks brand contact/press/partnership pages, respects `robots.txt`, and writes discovered emails into `brand_contacts`.
+
+Install local worker dependencies and Chromium:
+
+```bash
+pnpm --dir workers install
+pnpm --dir workers exec playwright install chromium
+```
+
+Run the worker locally:
+
+```bash
+pnpm worker:dev
+```
+
+Required worker env vars:
+
+```bash
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+WORKER_KIND=page_scrape
+WORKER_ID=
+```
+
+`SUPABASE_URL` can be the same value as `NEXT_PUBLIC_SUPABASE_URL`. See `workers/README.md` for Railway deployment, scaling, and stuck-job debugging.
+
 ## Seed Athena's Profiles
 
 After creating or identifying the target auth user, run:
 
 ```bash
-   pnpm seed --user-id=<uuid>
-   pnpm seed --user-id=<uuid> --seed-brands
+pnpm seed --user-id=<uuid>
+pnpm seed --user-id=<uuid> --seed-brands
 ```
 
 The seed script creates:
@@ -176,9 +207,11 @@ pnpm test:csv-import
 pnpm test:hunter-mapping
 pnpm test:contact-enrichment
 pnpm test:bulk-enrichment
+pnpm test:jobs-queue
+pnpm test:page-scrape-mapping
 ```
 
-`pnpm test:brand-identity` checks deterministic identity key normalization and merge promotion. `pnpm test:csv-import` imports a fixture CSV with valid and invalid rows, then verifies source signals and unique identity keys. The Hunter/contact tests use mocked Hunter responses, so they do not spend Hunter quota.
+`pnpm test:brand-identity` checks deterministic identity key normalization and merge promotion. `pnpm test:csv-import` imports a fixture CSV with valid and invalid rows, then verifies source signals and unique identity keys. The Hunter/contact tests use mocked Hunter responses, so they do not spend Hunter quota. The jobs queue test exercises enqueue, atomic claim, complete, and retry/fail behavior. The page-scrape mapping test stays browser-free and checks email/context role detection.
 
 ## Useful Commands
 
@@ -200,6 +233,9 @@ pnpm test:csv-import
 pnpm test:hunter-mapping
 pnpm test:contact-enrichment
 pnpm test:bulk-enrichment
+pnpm test:jobs-queue
+pnpm test:page-scrape-mapping
+pnpm worker:dev
 ```
 
 ## Repo Structure
