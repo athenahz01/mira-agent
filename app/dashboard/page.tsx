@@ -235,11 +235,15 @@ export default async function DashboardPage() {
               </div>
               <div className="rounded-md border px-3 py-3">
                 <p className="text-2xl font-semibold">
-                  {data.brandSummary.topCategories.length}
+                  {data.brandSummary.totalContacts}
                 </p>
-                <p className="text-sm text-muted-foreground">Top categories</p>
+                <p className="text-sm text-muted-foreground">Total contacts</p>
               </div>
             </div>
+            <p className="text-sm text-muted-foreground">
+              Brands with contacts: {data.brandSummary.brandsWithContacts} /{" "}
+              {data.brandSummary.total}
+            </p>
             {data.brandSummary.topCategories.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {data.brandSummary.topCategories.map((category) => (

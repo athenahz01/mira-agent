@@ -52,6 +52,8 @@ export type CsvImportResult = {
 
 export type BrandListRow = Tables<"brands"> & {
   has_contacts: boolean;
+  contact_count: number;
+  contacts: Tables<"brand_contacts">[];
 };
 
 export type BrandListResult = {
@@ -61,12 +63,15 @@ export type BrandListResult = {
   pageSize: number;
   totalPages: number;
   categoryOptions: string[];
+  unenrichedHunterCount: number;
   filters: BrandFilters;
 };
 
 export type BrandPoolSummary = {
   total: number;
   excluded: number;
+  totalContacts: number;
+  brandsWithContacts: number;
   topCategories: { category: string; count: number }[];
 };
 
@@ -315,7 +320,7 @@ export async function listBrandsForUser(
   rawFilters: Partial<BrandFilters>,
 ): Promise<BrandListResult> {
   const filters = brandFiltersSchema.parse(rawFilters);
-  const [{ data: brands, error: brandsError }, contactsResult] =
+  const [{ data: brands, error: brandsError }, contactsResult, signalsResult] =
     await Promise.all([
       context.supabase
         .from("brands")
@@ -323,8 +328,13 @@ export async function listBrandsForUser(
         .eq("user_id", context.userId),
       context.supabase
         .from("brand_contacts")
-        .select("brand_id")
+        .select("*")
         .eq("user_id", context.userId),
+      context.supabase
+        .from("source_signals")
+        .select("brand_id")
+        .eq("user_id", context.userId)
+        .eq("signal_type", "hunter_enrichment"),
     ]);
 
   if (brandsError) {
@@ -335,8 +345,13 @@ export async function listBrandsForUser(
     throw new Error(contactsResult.error.message);
   }
 
-  const contactBrandIds = new Set(
-    (contactsResult.data ?? []).map((contact) => contact.brand_id),
+  if (signalsResult.error) {
+    throw new Error(signalsResult.error.message);
+  }
+
+  const contactsByBrandId = groupContactsByBrand(contactsResult.data ?? []);
+  const hunterEnrichedBrandIds = new Set(
+    (signalsResult.data ?? []).map((signal) => signal.brand_id),
   );
   const categoryOptions = uniqueSorted(
     (brands ?? []).flatMap((brand) => brand.category),
@@ -344,7 +359,9 @@ export async function listBrandsForUser(
   const filtered = applyBrandFilters(
     (brands ?? []).map((brand) => ({
       ...brand,
-      has_contacts: contactBrandIds.has(brand.id),
+      contacts: sortContacts(contactsByBrandId.get(brand.id) ?? []),
+      contact_count: contactsByBrandId.get(brand.id)?.length ?? 0,
+      has_contacts: (contactsByBrandId.get(brand.id)?.length ?? 0) > 0,
     })),
     filters,
   );
@@ -361,6 +378,9 @@ export async function listBrandsForUser(
     pageSize: BRAND_PAGE_SIZE,
     totalPages,
     categoryOptions,
+    unenrichedHunterCount: (brands ?? []).filter(
+      (brand) => brand.domain && !hunterEnrichedBrandIds.has(brand.id),
+    ).length,
     filters: {
       ...filters,
       page,
@@ -373,7 +393,7 @@ export async function getBrandPoolSummary(
 ): Promise<BrandPoolSummary> {
   const { data, error } = await context.supabase
     .from("brands")
-    .select("category,excluded")
+    .select("id,category,excluded")
     .eq("user_id", context.userId);
 
   if (error) {
@@ -388,14 +408,49 @@ export async function getBrandPoolSummary(
     }
   }
 
+  const { data: contacts, error: contactsError } = await context.supabase
+    .from("brand_contacts")
+    .select("brand_id")
+    .eq("user_id", context.userId);
+
+  if (contactsError) {
+    throw new Error(contactsError.message);
+  }
+
+  const contactBrandIds = new Set(
+    (contacts ?? []).map((contact) => contact.brand_id),
+  );
+
   return {
     total: data?.length ?? 0,
     excluded: (data ?? []).filter((brand) => brand.excluded).length,
+    totalContacts: contacts?.length ?? 0,
+    brandsWithContacts: contactBrandIds.size,
     topCategories: [...categoryCounts.entries()]
       .map(([category, count]) => ({ category, count }))
       .sort((a, b) => b.count - a.count || a.category.localeCompare(b.category))
       .slice(0, 5),
   };
+}
+
+function groupContactsByBrand(contacts: Tables<"brand_contacts">[]) {
+  const grouped = new Map<string, Tables<"brand_contacts">[]>();
+
+  for (const contact of contacts) {
+    const existing = grouped.get(contact.brand_id) ?? [];
+    existing.push(contact);
+    grouped.set(contact.brand_id, existing);
+  }
+
+  return grouped;
+}
+
+function sortContacts(contacts: Tables<"brand_contacts">[]) {
+  return [...contacts].sort(
+    (a, b) =>
+      (b.confidence ?? -1) - (a.confidence ?? -1) ||
+      a.email.localeCompare(b.email),
+  );
 }
 
 export async function insertSourceSignal(

@@ -7,8 +7,12 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
+  addBrandContactManual,
   addBrandManual,
   addBrandsFromCsv,
+  enrichBrandContacts,
+  enrichUnenrichedBrands,
+  markContactUnreachable,
   toggleBrandExcluded,
   updateBrand,
 } from "@/app/actions/brands";
@@ -46,6 +50,8 @@ import type {
   BrandListRow,
   CsvImportResult,
 } from "@/lib/brands/service";
+import type { BulkEnrichmentResult } from "@/lib/enrichment/bulk";
+import type { ContactDiscoveryResult } from "@/lib/enrichment/contacts";
 
 type SizeInput =
   | "pre-launch"
@@ -71,6 +77,18 @@ type BrandEditState = BrandFormState & {
   aliases: string[];
   excluded: boolean;
   exclusion_reason: string;
+};
+
+type ContactFormState = {
+  email: string;
+  name: string;
+  role:
+    | "pr"
+    | "marketing"
+    | "partnerships"
+    | "founder"
+    | "generic_info"
+    | "unknown";
 };
 
 type FilterState = {
@@ -119,10 +137,21 @@ const emptyBrandForm: BrandFormState = {
   notes: "",
 };
 
+const emptyContactForm: ContactFormState = {
+  email: "",
+  name: "",
+  role: "unknown",
+};
+
 export function BrandsClient({ initialList }: { initialList: BrandListResult }) {
   const router = useRouter();
   const [manualForm, setManualForm] = useState<BrandFormState>(emptyBrandForm);
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
+  const [bulkResult, setBulkResult] = useState<BulkEnrichmentResult | null>(
+    null,
+  );
+  const [contactResult, setContactResult] =
+    useState<ContactDiscoveryResult | null>(null);
   const [showSkippedRows, setShowSkippedRows] = useState(false);
   const [editingBrand, setEditingBrand] = useState<Tables<"brands"> | null>(
     null,
@@ -139,6 +168,13 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
   });
   const [isSaving, startSaving] = useTransition();
   const [isImporting, startImporting] = useTransition();
+  const [isEnriching, startEnriching] = useTransition();
+  const [contactForm, setContactForm] =
+    useState<ContactFormState>(emptyContactForm);
+  const activeEditingBrand = editingBrand
+    ? initialList.brands.find((brand) => brand.id === editingBrand.id) ??
+      editingBrand
+    : null;
 
   function refreshBrands() {
     router.refresh();
@@ -186,6 +222,8 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
 
   function openEdit(brand: Tables<"brands">) {
     setEditingBrand(brand);
+    setContactResult(null);
+    setContactForm(emptyContactForm);
     setEditForm({
       name: brand.name,
       aliases: brand.aliases,
@@ -199,6 +237,81 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
       notes: brand.source_signals_summary ?? "",
       excluded: brand.excluded,
       exclusion_reason: brand.exclusion_reason ?? "",
+    });
+  }
+
+  function enrichOneBrand() {
+    if (!activeEditingBrand) {
+      return;
+    }
+
+    startEnriching(async () => {
+      const result = await enrichBrandContacts(activeEditingBrand.id);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setContactResult(result.data);
+      toast.success(contactResultLabel(result.data));
+      refreshBrands();
+    });
+  }
+
+  function enrichBulk() {
+    startEnriching(async () => {
+      const result = await enrichUnenrichedBrands();
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setBulkResult(result.data);
+      toast.success(result.message);
+      refreshBrands();
+    });
+  }
+
+  function addManualContact(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!activeEditingBrand) {
+      return;
+    }
+
+    startSaving(async () => {
+      const result = await addBrandContactManual(
+        activeEditingBrand.id,
+        contactForm,
+      );
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setContactForm(emptyContactForm);
+      toast.success(result.message);
+      refreshBrands();
+    });
+  }
+
+  function toggleUnreachable(contact: Tables<"brand_contacts">) {
+    startSaving(async () => {
+      const result = await markContactUnreachable(
+        contact.id,
+        !contact.marked_unreachable,
+      );
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success(result.message);
+      refreshBrands();
     });
   }
 
@@ -294,7 +407,7 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
           </Button>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <div className="grid gap-6 xl:grid-cols-3">
           <Card>
             <CardHeader>
               <CardTitle>Add a brand</CardTitle>
@@ -311,6 +424,31 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
                 onSubmit={submitManualBrand}
                 submitLabel="Add brand"
               />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Bulk enrich</CardTitle>
+              <CardDescription>
+                {initialList.unenrichedHunterCount} brands with domains have no
+                Hunter enrichment yet.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-4">
+              <Button disabled={isEnriching} onClick={enrichBulk} type="button">
+                {isEnriching ? <Loader2 className="animate-spin" /> : null}
+                Enrich up to 25
+              </Button>
+              {bulkResult ? (
+                <div className="rounded-md border bg-background p-3 text-sm">
+                  <p className="font-medium">
+                    {bulkResult.processed} processed, {bulkResult.succeeded}{" "}
+                    succeeded, {bulkResult.skipped} skipped,{" "}
+                    {bulkResult.errors.length} errors
+                  </p>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 
@@ -436,18 +574,33 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
             </DialogDescription>
           </DialogHeader>
           {editForm ? (
-            <BrandForm
-              form={editForm}
-              includeAliases
-              includeExclusion
-              isSaving={isSaving}
-              onChange={(nextForm) => setEditForm(nextForm as BrandEditState)}
-              onSubmit={(event) => {
-                event.preventDefault();
-                saveEdit();
-              }}
-              submitLabel="Save changes"
-            />
+            <div className="grid gap-6">
+              <BrandForm
+                form={editForm}
+                includeAliases
+                includeExclusion
+                isSaving={isSaving}
+                onChange={(nextForm) => setEditForm(nextForm as BrandEditState)}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  saveEdit();
+                }}
+                submitLabel="Save changes"
+              />
+              {activeEditingBrand ? (
+                <ContactsSection
+                  brand={activeEditingBrand as BrandListRow}
+                  contactForm={contactForm}
+                  contactResult={contactResult}
+                  isEnriching={isEnriching}
+                  isSaving={isSaving}
+                  onAddContact={addManualContact}
+                  onChangeContactForm={setContactForm}
+                  onEnrich={enrichOneBrand}
+                  onToggleUnreachable={toggleUnreachable}
+                />
+              ) : null}
+            </div>
           ) : null}
         </DialogContent>
       </Dialog>
@@ -572,6 +725,7 @@ function BrandTable({
           <TableHead>Size</TableHead>
           <TableHead>IG</TableHead>
           <TableHead>Domain</TableHead>
+          <TableHead>Contacts</TableHead>
           <TableHead>Pitched?</TableHead>
           <TableHead>Excluded</TableHead>
           <TableHead>
@@ -585,7 +739,7 @@ function BrandTable({
       <TableBody>
         {brands.length === 0 ? (
           <TableRow>
-            <TableCell className="py-10 text-center text-muted-foreground" colSpan={9}>
+            <TableCell className="py-10 text-center text-muted-foreground" colSpan={10}>
               No brands match these filters.
             </TableCell>
           </TableRow>
@@ -614,6 +768,13 @@ function BrandTable({
                 {brand.instagram_handle ? `@${brand.instagram_handle}` : "None"}
               </TableCell>
               <TableCell>{brand.domain ?? "None"}</TableCell>
+              <TableCell>
+                {brand.contact_count > 0 ? (
+                  <Badge variant="secondary">{brand.contact_count}</Badge>
+                ) : (
+                  "None"
+                )}
+              </TableCell>
               <TableCell>
                 {brand.last_pitched_at
                   ? new Date(brand.last_pitched_at).toLocaleDateString()
@@ -648,6 +809,160 @@ function BrandTable({
         )}
       </TableBody>
     </Table>
+  );
+}
+
+function ContactsSection({
+  brand,
+  contactForm,
+  contactResult,
+  isEnriching,
+  isSaving,
+  onAddContact,
+  onChangeContactForm,
+  onEnrich,
+  onToggleUnreachable,
+}: {
+  brand: BrandListRow;
+  contactForm: ContactFormState;
+  contactResult: ContactDiscoveryResult | null;
+  isEnriching: boolean;
+  isSaving: boolean;
+  onAddContact: (event: React.FormEvent<HTMLFormElement>) => void;
+  onChangeContactForm: (form: ContactFormState) => void;
+  onEnrich: () => void;
+  onToggleUnreachable: (contact: Tables<"brand_contacts">) => void;
+}) {
+  return (
+    <section className="grid gap-4 border-t pt-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold">Contacts</h3>
+          <p className="text-sm text-muted-foreground">
+            Hunter results are sorted by confidence, with manual contacts kept
+            here too.
+          </p>
+        </div>
+        <Button
+          disabled={isEnriching || !brand.domain}
+          onClick={onEnrich}
+          type="button"
+          variant="outline"
+        >
+          {isEnriching ? <Loader2 className="animate-spin" /> : null}
+          Find contacts
+        </Button>
+      </div>
+
+      {contactResult ? (
+        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+          {contactResultLabel(contactResult)}
+        </div>
+      ) : null}
+
+      <div className="grid gap-2">
+        {brand.contacts.length === 0 ? (
+          <p className="rounded-md border p-3 text-sm text-muted-foreground">
+            No contacts yet.
+          </p>
+        ) : (
+          brand.contacts.map((contact) => (
+            <div
+              className="grid gap-3 rounded-md border p-3 text-sm"
+              key={contact.id}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p
+                    className={
+                      contact.marked_unreachable ? "line-through" : undefined
+                    }
+                  >
+                    {contact.email}
+                  </p>
+                  {contact.name ? (
+                    <p className="text-muted-foreground">{contact.name}</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">{contact.role ?? "unknown"}</Badge>
+                  <Badge variant={confidenceVariant(contact.confidence)}>
+                    {confidenceLabel(contact.confidence)}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {contact.source}
+                  </span>
+                </div>
+              </div>
+              <Toggle
+                checked={contact.marked_unreachable}
+                label="Mark unreachable"
+                onChange={() => onToggleUnreachable(contact)}
+              />
+            </div>
+          ))
+        )}
+      </div>
+
+      <form className="grid gap-3 rounded-md border p-3" onSubmit={onAddContact}>
+        <p className="text-sm font-medium">Add contact manually</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Email">
+            <Input
+              onChange={(event) =>
+                onChangeContactForm({
+                  ...contactForm,
+                  email: event.target.value,
+                })
+              }
+              required
+              type="email"
+              value={contactForm.email}
+            />
+          </Field>
+          <Field label="Name">
+            <Input
+              onChange={(event) =>
+                onChangeContactForm({
+                  ...contactForm,
+                  name: event.target.value,
+                })
+              }
+              value={contactForm.name}
+            />
+          </Field>
+        </div>
+        <Field label="Role">
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            onChange={(event) =>
+              onChangeContactForm({
+                ...contactForm,
+                role: event.target.value as ContactFormState["role"],
+              })
+            }
+            value={contactForm.role}
+          >
+            {[
+              "pr",
+              "marketing",
+              "partnerships",
+              "founder",
+              "generic_info",
+              "unknown",
+            ].map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Button className="w-fit" disabled={isSaving} type="submit">
+          {isSaving ? <Loader2 className="animate-spin" /> : <Plus />}
+          Add contact
+        </Button>
+      </form>
+    </section>
   );
 }
 
@@ -954,4 +1269,56 @@ function toBrandInput(form: BrandFormState) {
 
 function sortArrow(direction: "asc" | "desc") {
   return direction === "asc" ? "up" : "down";
+}
+
+function contactResultLabel(result: ContactDiscoveryResult) {
+  if (result.status === "success") {
+    return `Found ${result.contacts_added} new and refreshed ${result.contacts_updated} contacts.`;
+  }
+
+  if (result.skipped_reason === "no_domain") {
+    return "Add a domain before searching Hunter.";
+  }
+
+  if (result.skipped_reason === "no_hunter_results") {
+    return "No emails found on Hunter for this domain.";
+  }
+
+  if (result.skipped_reason === "rate_limited") {
+    return "Hunter rate limit reached. Try again later.";
+  }
+
+  return result.error_message ?? "Contact enrichment did not finish.";
+}
+
+function confidenceLabel(confidence: number | null) {
+  if (confidence === null) {
+    return "manual";
+  }
+
+  if (confidence >= 80) {
+    return `high ${confidence}`;
+  }
+
+  if (confidence >= 60) {
+    return `medium ${confidence}`;
+  }
+
+  return `low ${confidence}`;
+}
+
+function confidenceVariant(confidence: number | null) {
+  if (confidence === null) {
+    return "outline" as const;
+  }
+
+  if (confidence >= 80) {
+    return "default" as const;
+  }
+
+  if (confidence >= 60) {
+    return "secondary" as const;
+  }
+
+  return "outline" as const;
 }
