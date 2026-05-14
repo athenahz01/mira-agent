@@ -87,6 +87,7 @@ export type Database = {
           excluded: boolean
           exclusion_reason: string | null
           id: string
+          identity_key: string
           instagram_handle: string | null
           last_pitched_at: string | null
           name: string
@@ -108,6 +109,7 @@ export type Database = {
           excluded?: boolean
           exclusion_reason?: string | null
           id?: string
+          identity_key?: string
           instagram_handle?: string | null
           last_pitched_at?: string | null
           name: string
@@ -129,6 +131,7 @@ export type Database = {
           excluded?: boolean
           exclusion_reason?: string | null
           id?: string
+          identity_key?: string
           instagram_handle?: string | null
           last_pitched_at?: string | null
           name?: string
