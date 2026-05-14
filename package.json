@@ -18,7 +18,10 @@
     "test:gmail-encryption": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-gmail-encryption.ts",
     "test:pdf-render": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-pdf-render.ts",
     "test:brand-identity": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-brand-identity.ts",
-    "test:csv-import": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-csv-import.ts"
+    "test:csv-import": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-csv-import.ts",
+    "test:hunter-mapping": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-hunter-mapping.ts",
+    "test:contact-enrichment": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-contact-enrichment.ts",
+    "test:bulk-enrichment": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-bulk-enrichment.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
