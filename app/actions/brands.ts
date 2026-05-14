@@ -18,8 +18,19 @@ import {
 } from "@/lib/brands/service";
 import { brandFiltersSchema } from "@/lib/brands/schemas";
 import type { BrandFormInput, BrandUpdateInput } from "@/lib/brands/schemas";
+import { enrichUnenrichedBrandsForUser } from "@/lib/enrichment/bulk";
+import type { BulkEnrichmentResult } from "@/lib/enrichment/bulk";
+import {
+  addManualBrandContact,
+  discoverContactsForBrand,
+  markBrandContactUnreachable,
+  manualBrandContactSchema,
+  type ContactDiscoveryResult,
+  type ManualBrandContactInput,
+} from "@/lib/enrichment/contacts";
 
 const brandIdSchema = z.string().uuid();
+const contactIdSchema = z.string().uuid();
 const toggleExcludedSchema = z.object({
   id: z.string().uuid(),
   excluded: z.boolean(),
@@ -83,6 +94,50 @@ export async function listBrands(
 ): Promise<ActionResult<BrandListResult>> {
   return runBrandAction("Brands loaded.", async (context) =>
     listBrandsForUser(context, brandFiltersSchema.parse(filters)),
+  );
+}
+
+export async function enrichBrandContacts(
+  brandId: string,
+): Promise<ActionResult<ContactDiscoveryResult>> {
+  return runBrandAction("Contact enrichment finished.", async (context) =>
+    discoverContactsForBrand(context, brandIdSchema.parse(brandId)),
+  );
+}
+
+export async function enrichUnenrichedBrands(): Promise<
+  ActionResult<BulkEnrichmentResult>
+> {
+  return runBrandAction("Bulk enrichment finished.", async (context) =>
+    enrichUnenrichedBrandsForUser(context, {
+      limit: 25,
+    }),
+  );
+}
+
+export async function addBrandContactManual(
+  brandId: string,
+  input: ManualBrandContactInput,
+): Promise<ActionResult<Tables<"brand_contacts">>> {
+  return runBrandAction("Contact saved.", async (context) =>
+    addManualBrandContact(
+      context,
+      brandIdSchema.parse(brandId),
+      manualBrandContactSchema.parse(input),
+    ),
+  );
+}
+
+export async function markContactUnreachable(
+  contactId: string,
+  unreachable: boolean,
+): Promise<ActionResult<Tables<"brand_contacts">>> {
+  return runBrandAction("Contact updated.", async (context) =>
+    markBrandContactUnreachable(
+      context,
+      contactIdSchema.parse(contactId),
+      z.boolean().parse(unreachable),
+    ),
   );
 }
 
