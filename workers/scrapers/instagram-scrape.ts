@@ -102,7 +102,12 @@ export async function processInstagramScrapeJob(
         signalType: "rapidapi_competitor_scrape",
         evidence: candidateToEvidence(payload.handle, candidate, posts),
       });
-    } catch {
+    } catch (error) {
+      console.error(
+        `Instagram scrape skipped ${candidate.instagram_handle}: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      );
       result.brands_skipped += 1;
     }
   }
