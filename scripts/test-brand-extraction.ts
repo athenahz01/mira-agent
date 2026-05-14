@@ -93,7 +93,7 @@ const byHandle = new Map(
 assert(result.posts_analyzed === 4, "Only recent posts should be analyzed.");
 assert(byHandle.get("tower28beauty")?.confidence_tier === "high", "Paid partnership should be high confidence.");
 assert(byHandle.get("topicals")?.confidence_tier === "medium", "#ad photo tag should be medium confidence.");
-assert(byHandle.get("glossier")?.confidence_tier === "low", "Caption mention plus photo tag should be low confidence.");
+assert(byHandle.get("glossier")?.confidence_tier === "medium", "Caption mention plus photo tag should be medium confidence.");
 assert(byHandle.get("rarebeauty")?.confidence_tier === "low", "Brandy tag-only account should be low confidence.");
 assert(!byHandle.has("athena_hz"), "Athena's own profile should be filtered.");
 assert(!byHandle.has("official_fanpage"), "official_ fan-style handles should be filtered.");

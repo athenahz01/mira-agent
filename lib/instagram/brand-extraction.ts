@@ -81,7 +81,7 @@ export function extractBrandCandidatesFromInstagramPosts(input: {
 
     for (const taggedUser of taggedUsers) {
       if (captionMentions.has(normalizeHandle(taggedUser.username))) {
-        signals.push(signalFromUser(taggedUser, post, "low", false));
+        signals.push(signalFromUser(taggedUser, post, "medium", false));
       } else {
         signals.push(signalFromUser(taggedUser, post, "low", false));
       }
