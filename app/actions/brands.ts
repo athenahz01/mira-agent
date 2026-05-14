@@ -28,6 +28,13 @@ import {
   type ContactDiscoveryResult,
   type ManualBrandContactInput,
 } from "@/lib/enrichment/contacts";
+import {
+  enqueueBulkPageScrapesForUser,
+  enqueuePageScrapeForBrand as enqueuePageScrapeForBrandJob,
+  getBrandPageScrapeJobStatus,
+  type BulkPageScrapeEnqueueResult,
+  type PageScrapeJobSummary,
+} from "@/lib/jobs/brand-page-scrape";
 
 const brandIdSchema = z.string().uuid();
 const contactIdSchema = z.string().uuid();
@@ -138,6 +145,32 @@ export async function markContactUnreachable(
       contactIdSchema.parse(contactId),
       z.boolean().parse(unreachable),
     ),
+  );
+}
+
+export async function enqueuePageScrapeForBrand(
+  brandId: string,
+): Promise<ActionResult<PageScrapeJobSummary>> {
+  return runBrandAction("Scraping queued.", async (context) =>
+    enqueuePageScrapeForBrandJob(context, brandIdSchema.parse(brandId)),
+  );
+}
+
+export async function getBrandJobStatus(
+  brandId: string,
+): Promise<ActionResult<PageScrapeJobSummary | null>> {
+  return runBrandAction("Job status loaded.", async (context) =>
+    getBrandPageScrapeJobStatus(context, brandIdSchema.parse(brandId)),
+  );
+}
+
+export async function enqueueBulkPageScrape(): Promise<
+  ActionResult<BulkPageScrapeEnqueueResult>
+> {
+  return runBrandAction("Page scraping queued.", async (context) =>
+    enqueueBulkPageScrapesForUser(context, {
+      limit: 25,
+    }),
   );
 }
 

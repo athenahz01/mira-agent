@@ -11,6 +11,8 @@ import {
 import type { BrandPoolSummary } from "@/lib/brands/service";
 import { getBrandPoolSummary } from "@/lib/brands/service";
 import type { Database } from "@/lib/db/types";
+import type { JobSummary } from "@/lib/jobs/brand-page-scrape";
+import { getJobSummary } from "@/lib/jobs/brand-page-scrape";
 import { createClient } from "@/lib/supabase/server";
 
 type AppUser = Database["public"]["Tables"]["users"]["Row"];
@@ -24,6 +26,7 @@ type DashboardData = {
   activeGuidesByProfileId: Record<string, VoiceGuide>;
   activeKitsByProfileId: Record<string, MediaKit>;
   brandSummary: BrandPoolSummary;
+  jobSummary: JobSummary;
 };
 
 async function getDashboardData(): Promise<DashboardData | null> {
@@ -42,6 +45,7 @@ async function getDashboardData(): Promise<DashboardData | null> {
     guidesResult,
     kitsResult,
     brandSummary,
+    jobSummary,
   ] = await Promise.all([
     supabase
       .from("users")
@@ -64,6 +68,10 @@ async function getDashboardData(): Promise<DashboardData | null> {
       .eq("user_id", user.id)
       .eq("is_active", true),
     getBrandPoolSummary({
+      supabase,
+      userId: user.id,
+    }),
+    getJobSummary({
       supabase,
       userId: user.id,
     }),
@@ -90,6 +98,7 @@ async function getDashboardData(): Promise<DashboardData | null> {
     activeGuidesByProfileId,
     activeKitsByProfileId,
     brandSummary,
+    jobSummary,
   };
 }
 
@@ -253,6 +262,42 @@ export default async function DashboardPage() {
                 ))}
               </div>
             ) : null}
+            <Button asChild className="w-fit" variant="outline">
+              <a href="/brands">Open brand pool</a>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Jobs</CardTitle>
+            <CardDescription>
+              Background work Mira has queued for brand research.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.jobSummary.queued}
+                </p>
+                <p className="text-sm text-muted-foreground">Queued</p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.jobSummary.running}
+                </p>
+                <p className="text-sm text-muted-foreground">Running</p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.jobSummary.failedLast7Days}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Failed, last 7 days
+                </p>
+              </div>
+            </div>
             <Button asChild className="w-fit" variant="outline">
               <a href="/brands">Open brand pool</a>
             </Button>

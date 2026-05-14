@@ -42,7 +42,7 @@ export async function enrichUnenrichedBrandsForUser(
     (signalsResult.data ?? []).map((signal) => signal.brand_id),
   );
   const targets = (brands ?? [])
-    .filter((brand) => !enrichedBrandIds.has(brand.id))
+    .filter((brand) => brand.domain && !enrichedBrandIds.has(brand.id))
     .slice(0, limit);
   const results: ContactDiscoveryResult[] = [];
 

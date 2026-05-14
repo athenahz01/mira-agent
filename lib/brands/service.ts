@@ -8,6 +8,7 @@ import type {
   TablesInsert,
   TablesUpdate,
 } from "../db/types";
+import type { PageScrapeJobSummary } from "../jobs/brand-page-scrape";
 import {
   brandIdentityCandidates,
   brandIdentityKey,
@@ -54,6 +55,7 @@ export type BrandListRow = Tables<"brands"> & {
   has_contacts: boolean;
   contact_count: number;
   contacts: Tables<"brand_contacts">[];
+  page_scrape_job: PageScrapeJobSummary | null;
 };
 
 export type BrandListResult = {
@@ -320,8 +322,12 @@ export async function listBrandsForUser(
   rawFilters: Partial<BrandFilters>,
 ): Promise<BrandListResult> {
   const filters = brandFiltersSchema.parse(rawFilters);
-  const [{ data: brands, error: brandsError }, contactsResult, signalsResult] =
-    await Promise.all([
+  const [
+    { data: brands, error: brandsError },
+    contactsResult,
+    signalsResult,
+    jobsResult,
+  ] = await Promise.all([
       context.supabase
         .from("brands")
         .select("*")
@@ -335,6 +341,17 @@ export async function listBrandsForUser(
         .select("brand_id")
         .eq("user_id", context.userId)
         .eq("signal_type", "hunter_enrichment"),
+      context.supabase
+        .from("jobs")
+        .select(
+          "id,status,payload_json,result_json,error_message,created_at,started_at,finished_at",
+        )
+        .eq("user_id", context.userId)
+        .eq("kind", "page_scrape")
+        .in("status", ["queued", "running"])
+        .order("created_at", {
+          ascending: false,
+        }),
     ]);
 
   if (brandsError) {
@@ -349,7 +366,14 @@ export async function listBrandsForUser(
     throw new Error(signalsResult.error.message);
   }
 
+  if (jobsResult.error) {
+    throw new Error(jobsResult.error.message);
+  }
+
   const contactsByBrandId = groupContactsByBrand(contactsResult.data ?? []);
+  const activePageScrapeJobsByBrandId = groupPageScrapeJobsByBrand(
+    jobsResult.data ?? [],
+  );
   const hunterEnrichedBrandIds = new Set(
     (signalsResult.data ?? []).map((signal) => signal.brand_id),
   );
@@ -362,6 +386,7 @@ export async function listBrandsForUser(
       contacts: sortContacts(contactsByBrandId.get(brand.id) ?? []),
       contact_count: contactsByBrandId.get(brand.id)?.length ?? 0,
       has_contacts: (contactsByBrandId.get(brand.id)?.length ?? 0) > 0,
+      page_scrape_job: activePageScrapeJobsByBrandId.get(brand.id) ?? null,
     })),
     filters,
   );
@@ -451,6 +476,32 @@ function sortContacts(contacts: Tables<"brand_contacts">[]) {
       (b.confidence ?? -1) - (a.confidence ?? -1) ||
       a.email.localeCompare(b.email),
   );
+}
+
+function groupPageScrapeJobsByBrand(jobs: PageScrapeJobSummary[]) {
+  const grouped = new Map<string, PageScrapeJobSummary>();
+
+  for (const job of jobs) {
+    const brandId = readBrandIdFromJobPayload(job.payload_json);
+
+    if (!brandId || grouped.has(brandId)) {
+      continue;
+    }
+
+    grouped.set(brandId, job);
+  }
+
+  return grouped;
+}
+
+function readBrandIdFromJobPayload(payload: Json) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return null;
+  }
+
+  const brandId = payload.brand_id;
+
+  return typeof brandId === "string" ? brandId : null;
 }
 
 export async function insertSourceSignal(

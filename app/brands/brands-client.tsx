@@ -3,7 +3,7 @@
 import { Loader2, Pencil, Plus, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
 import type React from "react";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -12,6 +12,9 @@ import {
   addBrandsFromCsv,
   enrichBrandContacts,
   enrichUnenrichedBrands,
+  enqueueBulkPageScrape,
+  enqueuePageScrapeForBrand,
+  getBrandJobStatus,
   markContactUnreachable,
   toggleBrandExcluded,
   updateBrand,
@@ -52,6 +55,10 @@ import type {
 } from "@/lib/brands/service";
 import type { BulkEnrichmentResult } from "@/lib/enrichment/bulk";
 import type { ContactDiscoveryResult } from "@/lib/enrichment/contacts";
+import type {
+  BulkPageScrapeEnqueueResult,
+  PageScrapeJobSummary,
+} from "@/lib/jobs/brand-page-scrape";
 
 type SizeInput =
   | "pre-launch"
@@ -150,8 +157,12 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
   const [bulkResult, setBulkResult] = useState<BulkEnrichmentResult | null>(
     null,
   );
+  const [bulkScrapeResult, setBulkScrapeResult] =
+    useState<BulkPageScrapeEnqueueResult | null>(null);
   const [contactResult, setContactResult] =
     useState<ContactDiscoveryResult | null>(null);
+  const [pageScrapeJob, setPageScrapeJob] =
+    useState<PageScrapeJobSummary | null>(null);
   const [showSkippedRows, setShowSkippedRows] = useState(false);
   const [editingBrand, setEditingBrand] = useState<Tables<"brands"> | null>(
     null,
@@ -169,12 +180,46 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
   const [isSaving, startSaving] = useTransition();
   const [isImporting, startImporting] = useTransition();
   const [isEnriching, startEnriching] = useTransition();
+  const [isScraping, startScraping] = useTransition();
   const [contactForm, setContactForm] =
     useState<ContactFormState>(emptyContactForm);
   const activeEditingBrand = editingBrand
     ? initialList.brands.find((brand) => brand.id === editingBrand.id) ??
       editingBrand
     : null;
+  const activePageScrapeJob =
+    pageScrapeJob ??
+    ((activeEditingBrand as BrandListRow | null)?.page_scrape_job ?? null);
+
+  useEffect(() => {
+    if (
+      !activeEditingBrand ||
+      !activePageScrapeJob ||
+      !["queued", "running"].includes(activePageScrapeJob.status)
+    ) {
+      return;
+    }
+
+    const interval = window.setInterval(async () => {
+      const result = await getBrandJobStatus(activeEditingBrand.id);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setPageScrapeJob(result.data);
+
+      if (
+        result.data &&
+        ["succeeded", "failed", "cancelled"].includes(result.data.status)
+      ) {
+        router.refresh();
+      }
+    }, 5_000);
+
+    return () => window.clearInterval(interval);
+  }, [activeEditingBrand, activePageScrapeJob, router]);
 
   function refreshBrands() {
     router.refresh();
@@ -220,9 +265,10 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
     });
   }
 
-  function openEdit(brand: Tables<"brands">) {
+  function openEdit(brand: BrandListRow) {
     setEditingBrand(brand);
     setContactResult(null);
+    setPageScrapeJob(brand.page_scrape_job);
     setContactForm(emptyContactForm);
     setEditForm({
       name: brand.name,
@@ -269,6 +315,40 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
       }
 
       setBulkResult(result.data);
+      toast.success(result.message);
+      refreshBrands();
+    });
+  }
+
+  function scrapeOneBrand() {
+    if (!activeEditingBrand) {
+      return;
+    }
+
+    startScraping(async () => {
+      const result = await enqueuePageScrapeForBrand(activeEditingBrand.id);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setPageScrapeJob(result.data);
+      toast.success(result.message);
+      refreshBrands();
+    });
+  }
+
+  function scrapeBulk() {
+    startScraping(async () => {
+      const result = await enqueueBulkPageScrape();
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setBulkScrapeResult(result.data);
       toast.success(result.message);
       refreshBrands();
     });
@@ -438,7 +518,7 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
             <CardContent className="grid gap-4">
               <Button disabled={isEnriching} onClick={enrichBulk} type="button">
                 {isEnriching ? <Loader2 className="animate-spin" /> : null}
-                Enrich up to 25
+                Enrich up to 25 with Hunter
               </Button>
               {bulkResult ? (
                 <div className="rounded-md border bg-background p-3 text-sm">
@@ -449,6 +529,22 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
                   </p>
                 </div>
               ) : null}
+              <div className="border-t pt-4">
+                <Button
+                  disabled={isScraping}
+                  onClick={scrapeBulk}
+                  type="button"
+                  variant="outline"
+                >
+                  {isScraping ? <Loader2 className="animate-spin" /> : null}
+                  Scrape contact pages for all
+                </Button>
+                {bulkScrapeResult ? (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {bulkScrapeResult.enqueued} scrape jobs queued.
+                  </p>
+                ) : null}
+              </div>
             </CardContent>
           </Card>
 
@@ -592,12 +688,15 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
                   brand={activeEditingBrand as BrandListRow}
                   contactForm={contactForm}
                   contactResult={contactResult}
+                  isScraping={isScraping}
                   isEnriching={isEnriching}
                   isSaving={isSaving}
                   onAddContact={addManualContact}
                   onChangeContactForm={setContactForm}
                   onEnrich={enrichOneBrand}
+                  onScrape={scrapeOneBrand}
                   onToggleUnreachable={toggleUnreachable}
+                  pageScrapeJob={activePageScrapeJob}
                 />
               ) : null}
             </div>
@@ -709,7 +808,7 @@ function BrandTable({
   sort: "created_at" | "name";
   direction: "asc" | "desc";
   onSort: (sort: "created_at" | "name") => void;
-  onEdit: (brand: Tables<"brands">) => void;
+  onEdit: (brand: BrandListRow) => void;
   onToggleExcluded: (brand: BrandListRow) => void;
 }) {
   return (
@@ -817,22 +916,35 @@ function ContactsSection({
   contactForm,
   contactResult,
   isEnriching,
+  isScraping,
   isSaving,
   onAddContact,
   onChangeContactForm,
   onEnrich,
+  onScrape,
   onToggleUnreachable,
+  pageScrapeJob,
 }: {
   brand: BrandListRow;
   contactForm: ContactFormState;
   contactResult: ContactDiscoveryResult | null;
   isEnriching: boolean;
+  isScraping: boolean;
   isSaving: boolean;
   onAddContact: (event: React.FormEvent<HTMLFormElement>) => void;
   onChangeContactForm: (form: ContactFormState) => void;
   onEnrich: () => void;
+  onScrape: () => void;
   onToggleUnreachable: (contact: Tables<"brand_contacts">) => void;
+  pageScrapeJob: PageScrapeJobSummary | null;
 }) {
+  const scrapeDisabled =
+    isScraping ||
+    !brand.domain ||
+    Boolean(
+      pageScrapeJob && ["queued", "running"].includes(pageScrapeJob.status),
+    );
+
   return (
     <section className="grid gap-4 border-t pt-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -843,20 +955,37 @@ function ContactsSection({
             here too.
           </p>
         </div>
-        <Button
-          disabled={isEnriching || !brand.domain}
-          onClick={onEnrich}
-          type="button"
-          variant="outline"
-        >
-          {isEnriching ? <Loader2 className="animate-spin" /> : null}
-          Find contacts
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={isEnriching || !brand.domain}
+            onClick={onEnrich}
+            type="button"
+            variant="outline"
+          >
+            {isEnriching ? <Loader2 className="animate-spin" /> : null}
+            Find contacts
+          </Button>
+          <Button
+            disabled={scrapeDisabled}
+            onClick={onScrape}
+            type="button"
+            variant="outline"
+          >
+            {isScraping ? <Loader2 className="animate-spin" /> : null}
+            Scrape contact pages
+          </Button>
+        </div>
       </div>
 
       {contactResult ? (
         <div className="rounded-md border bg-muted/30 p-3 text-sm">
           {contactResultLabel(contactResult)}
+        </div>
+      ) : null}
+
+      {pageScrapeJob ? (
+        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+          {pageScrapeJobLabel(pageScrapeJob)}
         </div>
       ) : null}
 
@@ -1289,6 +1418,40 @@ function contactResultLabel(result: ContactDiscoveryResult) {
   }
 
   return result.error_message ?? "Contact enrichment did not finish.";
+}
+
+function pageScrapeJobLabel(job: PageScrapeJobSummary) {
+  if (job.status === "queued") {
+    return "Scraping queued. Mira will check this brand's contact pages shortly.";
+  }
+
+  if (job.status === "running") {
+    return "Scraping contact pages now.";
+  }
+
+  if (job.status === "succeeded") {
+    const count = readContactsFound(job.result_json);
+
+    return count === null
+      ? "Scraping finished."
+      : `Scraping finished. Found ${count} contact${count === 1 ? "" : "s"}.`;
+  }
+
+  if (job.status === "failed") {
+    return job.error_message ?? "Scraping failed.";
+  }
+
+  return "Scraping cancelled.";
+}
+
+function readContactsFound(resultJson: Tables<"jobs">["result_json"]) {
+  if (!resultJson || typeof resultJson !== "object" || Array.isArray(resultJson)) {
+    return null;
+  }
+
+  const contacts = resultJson.contacts;
+
+  return Array.isArray(contacts) ? contacts.length : null;
 }
 
 function confidenceLabel(confidence: number | null) {
