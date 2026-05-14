@@ -1,6 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import {
+  findOrCreateBrand,
+  insertSourceSignal,
+  type BrandContext,
+} from "../lib/brands/service.ts";
 import type { Database } from "../lib/db/types";
 
 const envSchema = z.object({
@@ -10,6 +15,7 @@ const envSchema = z.object({
 
 const argsSchema = z.object({
   userId: z.string().uuid(),
+  seedBrands: z.boolean(),
 });
 
 type CreatorProfileInsert =
@@ -27,10 +33,11 @@ if (!envResult.success) {
 const userIdArg = process.argv.find((arg) => arg.startsWith("--user-id="));
 const argsResult = argsSchema.safeParse({
   userId: userIdArg?.replace("--user-id=", ""),
+  seedBrands: process.argv.includes("--seed-brands"),
 });
 
 if (!argsResult.success) {
-  console.error("Usage: pnpm seed --user-id=<uuid>");
+  console.error("Usage: pnpm seed --user-id=<uuid> [--seed-brands]");
   process.exit(1);
 }
 
@@ -79,6 +86,64 @@ const creatorProfiles: CreatorProfileInsert[] = [
     ],
     active: true,
     cross_pitch_cooldown_days: 90,
+  },
+];
+
+const exampleBrands = [
+  {
+    name: "Sunday Riley",
+    domain: "sundayriley.com",
+    instagram_handle: "@sundayriley",
+    tiktok_handle: null,
+    category: ["skincare", "beauty"],
+    aesthetic_tags: ["clean", "clinical", "elevated"],
+    size_estimate: "established-dtc" as const,
+    pays_creators: true,
+    notes: "Example seed brand for Athena's fashion and lifestyle profile.",
+  },
+  {
+    name: "Tower 28",
+    domain: "tower28beauty.com",
+    instagram_handle: "@tower28beauty",
+    tiktok_handle: null,
+    category: ["beauty", "skincare"],
+    aesthetic_tags: ["beachy", "inclusive", "soft-color"],
+    size_estimate: "indie-medium" as const,
+    pays_creators: true,
+    notes: "Example seed brand with a warm creator-friendly aesthetic.",
+  },
+  {
+    name: "Rare Beauty",
+    domain: "rarebeauty.com",
+    instagram_handle: "@rarebeauty",
+    tiktok_handle: null,
+    category: ["beauty"],
+    aesthetic_tags: ["soft", "polished", "community-led"],
+    size_estimate: "legacy-large" as const,
+    pays_creators: true,
+    notes: "Example seed brand for beauty and lifestyle outreach.",
+  },
+  {
+    name: "Glossier",
+    domain: "glossier.com",
+    instagram_handle: "@glossier",
+    tiktok_handle: null,
+    category: ["beauty", "skincare"],
+    aesthetic_tags: ["minimal", "dewy", "everyday"],
+    size_estimate: "established-dtc" as const,
+    pays_creators: true,
+    notes: "Example seed brand with strong DTC creator fit.",
+  },
+  {
+    name: "Topicals",
+    domain: "mytopicals.com",
+    instagram_handle: "@topicals",
+    tiktok_handle: null,
+    category: ["skincare", "beauty"],
+    aesthetic_tags: ["bold", "gen-z", "skin-positive"],
+    size_estimate: "indie-medium" as const,
+    pays_creators: true,
+    notes: "Example seed brand for skincare and UGC angles.",
   },
 ];
 
@@ -152,6 +217,25 @@ async function ensureOutreachRule(creatorProfileId: string | null) {
   }
 }
 
+async function seedExampleBrands() {
+  const context: BrandContext = {
+    supabase,
+    userId: args.userId,
+  };
+
+  for (const brand of exampleBrands) {
+    const result = await findOrCreateBrand(context, brand);
+    await insertSourceSignal(context, {
+      brandId: result.brand.id,
+      signalType: "manual_seed",
+      evidence: {
+        ...brand,
+        seed_script: true,
+      },
+    });
+  }
+}
+
 async function main() {
   await seedUser();
   const profiles = await seedCreatorProfiles();
@@ -161,7 +245,15 @@ async function main() {
     profiles.map((profile) => ensureOutreachRule(profile.id)),
   );
 
-  console.log(`Seeded Mira foundation for ${args.userId}.`);
+  if (args.seedBrands) {
+    await seedExampleBrands();
+  }
+
+  console.log(
+    `Seeded Mira foundation for ${args.userId}${
+      args.seedBrands ? " with example brands" : ""
+    }.`,
+  );
 }
 
 main().catch((error: unknown) => {

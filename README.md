@@ -105,7 +105,8 @@ Production will need the Vercel callback URL added too.
 After creating or identifying the target auth user, run:
 
 ```bash
-pnpm seed --user-id=<uuid>
+   pnpm seed --user-id=<uuid>
+   pnpm seed --user-id=<uuid> --seed-brands
 ```
 
 The seed script creates:
@@ -116,6 +117,8 @@ The seed script creates:
 - One outreach rules row per creator profile
 
 It does not seed voice style guides or media kits.
+
+Pass `--seed-brands` to also create five example brand rows for the brand pool UI.
 
 ## RLS Test
 
@@ -150,6 +153,17 @@ pnpm test:pdf-render
 
 `pnpm test:media-kit` uses a fake media kit generator and verifies media kit versioning. `pnpm test:gmail-encryption` checks AES-256-GCM refresh-token round trips and tamper detection. `pnpm test:pdf-render` renders a fixture kit to a PDF buffer without uploading to Storage.
 
+## Brand Pool Tests
+
+Run:
+
+```bash
+pnpm test:brand-identity
+pnpm test:csv-import
+```
+
+`pnpm test:brand-identity` checks deterministic identity key normalization and merge promotion. `pnpm test:csv-import` imports a fixture CSV with valid and invalid rows, then verifies source signals and unique identity keys.
+
 ## Useful Commands
 
 ```bash
@@ -165,6 +179,8 @@ pnpm test:voice-guide-shape
 pnpm test:media-kit
 pnpm test:gmail-encryption
 pnpm test:pdf-render
+pnpm test:brand-identity
+pnpm test:csv-import
 ```
 
 ## Repo Structure
