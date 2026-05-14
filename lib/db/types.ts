@@ -516,6 +516,42 @@ export type Database = {
           },
         ]
       }
+      gmail_credentials: {
+        Row: {
+          created_at: string
+          google_email: string
+          id: string
+          last_refreshed_at: string | null
+          refresh_token_encrypted: string
+          revoked_at: string | null
+          scopes: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          google_email: string
+          id?: string
+          last_refreshed_at?: string | null
+          refresh_token_encrypted: string
+          revoked_at?: string | null
+          scopes: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          google_email?: string
+          id?: string
+          last_refreshed_at?: string | null
+          refresh_token_encrypted?: string
+          revoked_at?: string | null
+          scopes?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       hook_library: {
         Row: {
           applies_to_deal_types: string[]
@@ -684,6 +720,39 @@ export type Database = {
           },
         ]
       }
+      oauth_states: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          redirect_to: string | null
+          state_hash: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          redirect_to?: string | null
+          state_hash: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          redirect_to?: string | null
+          state_hash?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       outreach_rules: {
         Row: {
           auto_send_after_approval: boolean
@@ -748,6 +817,56 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "outreach_rules_creator_profile_id_fkey"
+            columns: ["creator_profile_id"]
+            isOneToOne: false
+            referencedRelation: "creator_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      past_brand_work: {
+        Row: {
+          brand_name: string
+          created_at: string
+          creator_profile_id: string
+          deal_type: string
+          id: string
+          link: string | null
+          one_liner: string
+          sort_order: number
+          updated_at: string
+          user_id: string
+          year: number
+        }
+        Insert: {
+          brand_name: string
+          created_at?: string
+          creator_profile_id: string
+          deal_type: string
+          id?: string
+          link?: string | null
+          one_liner: string
+          sort_order?: number
+          updated_at?: string
+          user_id: string
+          year: number
+        }
+        Update: {
+          brand_name?: string
+          created_at?: string
+          creator_profile_id?: string
+          deal_type?: string
+          id?: string
+          link?: string | null
+          one_liner?: string
+          sort_order?: number
+          updated_at?: string
+          user_id?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "past_brand_work_creator_profile_id_fkey"
             columns: ["creator_profile_id"]
             isOneToOne: false
             referencedRelation: "creator_profiles"
@@ -891,7 +1010,6 @@ export type Database = {
         Row: {
           created_at: string
           email: string
-          gmail_oauth_token_ref: string | null
           name: string | null
           onboarding_completed_at: string | null
           physical_address: string | null
@@ -903,7 +1021,6 @@ export type Database = {
         Insert: {
           created_at?: string
           email: string
-          gmail_oauth_token_ref?: string | null
           name?: string | null
           onboarding_completed_at?: string | null
           physical_address?: string | null
@@ -915,7 +1032,6 @@ export type Database = {
         Update: {
           created_at?: string
           email?: string
-          gmail_oauth_token_ref?: string | null
           name?: string | null
           onboarding_completed_at?: string | null
           physical_address?: string | null
