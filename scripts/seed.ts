@@ -89,6 +89,7 @@ async function seedUser() {
       email: "zhengathenahuo@gmail.com",
       name: "Athena Huo",
       timezone: "America/New_York",
+      sender_display_name: "Athena Huo",
     },
     {
       onConflict: "user_id",
