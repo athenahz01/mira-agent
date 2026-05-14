@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
-import type { Database } from "../lib/db/types";
+import type { Database, TablesInsert } from "../lib/db/types";
 
 const envSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
@@ -15,6 +15,10 @@ type AuthedTestClient = {
   client: SupabaseClient<Database>;
   userId: string;
   email: string;
+};
+
+type CampaignInsertViaTrigger = Omit<TablesInsert<"campaigns">, "user_id"> & {
+  user_id?: never;
 };
 
 const envResult = envSchema.safeParse(process.env);
@@ -96,7 +100,9 @@ async function createSignedInUser(label: string): Promise<AuthedTestClient> {
   });
 
   if (appUserError) {
-    throw new Error(`Failed to create app user ${label}: ${appUserError.message}`);
+    throw new Error(
+      `Failed to create app user ${label}: ${appUserError.message}`,
+    );
   }
 
   return {
@@ -130,6 +136,62 @@ async function insertBrandForUser(
   return data;
 }
 
+async function insertCreatorProfileForUser(
+  testUser: AuthedTestClient,
+  handle: string,
+) {
+  const { data, error } = await testUser.client
+    .from("creator_profiles")
+    .insert({
+      user_id: testUser.userId,
+      handle,
+      display_name: `Mira RLS ${handle}`,
+    })
+    .select("id,handle,user_id")
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `Failed to insert creator profile for ${testUser.email}: ${
+        error?.message ?? "missing creator profile"
+      }`,
+    );
+  }
+
+  return data;
+}
+
+async function insertCampaignForUser(
+  testUser: AuthedTestClient,
+  creatorProfileId: string,
+  brandId: string,
+) {
+  const campaignInsert: CampaignInsertViaTrigger = {
+    creator_profile_id: creatorProfileId,
+    brand_id: brandId,
+    deal_type: "paid",
+  };
+  const { data, error } = await testUser.client
+    .from("campaigns")
+    .insert(campaignInsert as unknown as TablesInsert<"campaigns">)
+    .select("id,status,user_id")
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `Failed to insert campaign for ${testUser.email}: ${
+        error?.message ?? "missing campaign"
+      }`,
+    );
+  }
+
+  if (data.user_id !== testUser.userId) {
+    throw new Error("Campaign trigger did not set the expected user_id.");
+  }
+
+  return data;
+}
+
 async function assertCanOnlyReadOwnBrand(
   testUser: AuthedTestClient,
   ownBrandId: string,
@@ -157,6 +219,40 @@ async function assertCanOnlyReadOwnBrand(
 
   if (otherRows.length !== 0) {
     throw new Error(`User ${testUser.email} could read another user's brand.`);
+  }
+}
+
+async function assertCanOnlyReadOwnCampaign(
+  testUser: AuthedTestClient,
+  ownCampaignId: string,
+  otherCampaignId: string,
+) {
+  const { data: ownRows, error: ownReadError } = await testUser.client
+    .from("campaigns")
+    .select("id")
+    .eq("id", ownCampaignId);
+
+  if (ownReadError || ownRows.length !== 1) {
+    throw new Error(
+      `User ${testUser.email} could not read their own campaign.`,
+    );
+  }
+
+  const { data: otherRows, error: otherReadError } = await testUser.client
+    .from("campaigns")
+    .select("id")
+    .eq("id", otherCampaignId);
+
+  if (otherReadError) {
+    throw new Error(
+      `Unexpected campaign read error for ${testUser.email}: ${otherReadError.message}`,
+    );
+  }
+
+  if (otherRows.length !== 0) {
+    throw new Error(
+      `User ${testUser.email} could read another user's campaign.`,
+    );
   }
 }
 
@@ -199,6 +295,45 @@ async function assertCannotModifyOtherBrand(
   }
 }
 
+async function assertCannotModifyOtherCampaign(
+  testUser: AuthedTestClient,
+  otherCampaignId: string,
+) {
+  const { data: updatedRows, error: updateError } = await testUser.client
+    .from("campaigns")
+    .update({
+      notes: "Mutated by wrong user",
+    })
+    .eq("id", otherCampaignId)
+    .select("id");
+
+  if (updateError) {
+    throw new Error(
+      `Unexpected campaign update error for ${testUser.email}: ${updateError.message}`,
+    );
+  }
+
+  if (updatedRows.length !== 0) {
+    throw new Error(`User ${testUser.email} updated another user's campaign.`);
+  }
+
+  const { data: deletedRows, error: deleteError } = await testUser.client
+    .from("campaigns")
+    .delete()
+    .eq("id", otherCampaignId)
+    .select("id");
+
+  if (deleteError) {
+    throw new Error(
+      `Unexpected campaign delete error for ${testUser.email}: ${deleteError.message}`,
+    );
+  }
+
+  if (deletedRows.length !== 0) {
+    throw new Error(`User ${testUser.email} deleted another user's campaign.`);
+  }
+}
+
 async function assertBrandStillExists(brandId: string, expectedName: string) {
   const { data, error } = await service
     .from("brands")
@@ -214,6 +349,24 @@ async function assertBrandStillExists(brandId: string, expectedName: string) {
 
   if (data.name !== expectedName) {
     throw new Error(`Protected brand was modified. Expected ${expectedName}.`);
+  }
+}
+
+async function assertCampaignStillExists(campaignId: string) {
+  const { data, error } = await service
+    .from("campaigns")
+    .select("status,notes")
+    .eq("id", campaignId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(
+      `Could not verify protected campaign: ${error?.message ?? "missing row"}`,
+    );
+  }
+
+  if (data.notes === "Mutated by wrong user") {
+    throw new Error("Protected campaign was modified.");
   }
 }
 
@@ -236,14 +389,32 @@ async function main() {
 
     const brandA = await insertBrandForUser(userA, "User A Brand");
     const brandB = await insertBrandForUser(userB, "User B Brand");
+    const profileA = await insertCreatorProfileForUser(userA, "rls_user_a");
+    const profileB = await insertCreatorProfileForUser(userB, "rls_user_b");
+    const campaignA = await insertCampaignForUser(
+      userA,
+      profileA.id,
+      brandA.id,
+    );
+    const campaignB = await insertCampaignForUser(
+      userB,
+      profileB.id,
+      brandB.id,
+    );
 
     await assertCanOnlyReadOwnBrand(userA, brandA.id, brandB.id);
     await assertCanOnlyReadOwnBrand(userB, brandB.id, brandA.id);
+    await assertCanOnlyReadOwnCampaign(userA, campaignA.id, campaignB.id);
+    await assertCanOnlyReadOwnCampaign(userB, campaignB.id, campaignA.id);
 
     await assertCannotModifyOtherBrand(userA, brandB.id);
     await assertBrandStillExists(brandB.id, "User B Brand");
+    await assertCannotModifyOtherCampaign(userA, campaignB.id);
+    await assertCampaignStillExists(campaignB.id);
 
-    console.log("RLS test passed: users can only read or modify their own rows.");
+    console.log(
+      "RLS test passed: brands and campaigns are isolated by user_id.",
+    );
   } finally {
     await cleanup();
   }
