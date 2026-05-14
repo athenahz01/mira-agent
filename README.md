@@ -33,6 +33,7 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    NEXT_PUBLIC_SUPABASE_ANON_KEY=
    SUPABASE_SERVICE_ROLE_KEY=
    ANTHROPIC_API_KEY=
+   HUNTER_API_KEY=
    ```
 
    Optional but recommended for Phase 1c:
@@ -43,6 +44,7 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    GOOGLE_OAUTH_CLIENT_SECRET=
    GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/api/gmail/callback
    GMAIL_TOKEN_ENCRYPTION_KEY=
+   HUNTER_RATE_LIMIT_PER_MINUTE=10
    ```
 
    Generate the Gmail encryption key with:
@@ -99,6 +101,17 @@ Before clicking "Connect Gmail" in `/settings`, create a Google OAuth client:
 6. Copy the client ID and secret into `.env.local` as `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`.
 
 Production will need the Vercel callback URL added too.
+
+## Hunter Setup
+
+Create a Hunter.io account, open the API page, and copy the API key into `.env.local`:
+
+```bash
+HUNTER_API_KEY=
+HUNTER_RATE_LIMIT_PER_MINUTE=10
+```
+
+The free Hunter tier is 25 searches per month, which is enough for development smoke tests but not enough for production enrichment. Mira also keeps a conservative per-process rate limiter around all Hunter calls.
 
 ## Seed Athena's Profiles
 
@@ -160,9 +173,12 @@ Run:
 ```bash
 pnpm test:brand-identity
 pnpm test:csv-import
+pnpm test:hunter-mapping
+pnpm test:contact-enrichment
+pnpm test:bulk-enrichment
 ```
 
-`pnpm test:brand-identity` checks deterministic identity key normalization and merge promotion. `pnpm test:csv-import` imports a fixture CSV with valid and invalid rows, then verifies source signals and unique identity keys.
+`pnpm test:brand-identity` checks deterministic identity key normalization and merge promotion. `pnpm test:csv-import` imports a fixture CSV with valid and invalid rows, then verifies source signals and unique identity keys. The Hunter/contact tests use mocked Hunter responses, so they do not spend Hunter quota.
 
 ## Useful Commands
 
@@ -181,6 +197,9 @@ pnpm test:gmail-encryption
 pnpm test:pdf-render
 pnpm test:brand-identity
 pnpm test:csv-import
+pnpm test:hunter-mapping
+pnpm test:contact-enrichment
+pnpm test:bulk-enrichment
 ```
 
 ## Repo Structure
