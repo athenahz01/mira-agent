@@ -602,6 +602,63 @@ export type Database = {
           },
         ]
       }
+      jobs: {
+        Row: {
+          attempts: number
+          created_at: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          kind: string
+          locked_by: string | null
+          locked_until: string | null
+          max_attempts: number
+          next_attempt_at: string
+          payload_json: Json
+          result_json: Json | null
+          started_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          kind: string
+          locked_by?: string | null
+          locked_until?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          payload_json: Json
+          result_json?: Json | null
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          error_message?: string | null
+          finished_at?: string | null
+          id?: string
+          kind?: string
+          locked_by?: string | null
+          locked_until?: string | null
+          max_attempts?: number
+          next_attempt_at?: string
+          payload_json?: Json
+          result_json?: Json | null
+          started_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       media_kits: {
         Row: {
           created_at: string
@@ -1138,6 +1195,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_next_job: {
+        Args: { p_kind: string; p_lease_seconds: number; p_worker_id: string }
+        Returns: {
+          attempts: number
+          created_at: string
+          error_message: string | null
+          finished_at: string | null
+          id: string
+          kind: string
+          locked_by: string | null
+          locked_until: string | null
+          max_attempts: number
+          next_attempt_at: string
+          payload_json: Json
+          result_json: Json | null
+          started_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "jobs"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       resolve_child_user_id: {
         Args: {
           expected_user_id: string
