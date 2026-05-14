@@ -8,7 +8,9 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
 - Supabase Postgres, Auth, Storage, and RLS
 - Vercel for the web app
 - Railway worker code under `workers/`
-- Anthropic, Gmail, Apify, Hunter.io, and Playwright in later phases
+- Anthropic for voice and media-kit generation
+- Gmail OAuth helpers for a later send/read phase
+- Apify, Hunter.io, and Playwright in later phases
 
 ## Setup
 
@@ -24,13 +26,29 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    cp .env.example .env.local
    ```
 
-3. Fill in:
+3. Fill in the required Supabase and Anthropic values:
 
    ```bash
    NEXT_PUBLIC_SUPABASE_URL=
    NEXT_PUBLIC_SUPABASE_ANON_KEY=
    SUPABASE_SERVICE_ROLE_KEY=
    ANTHROPIC_API_KEY=
+   ```
+
+   Optional but recommended for Phase 1c:
+
+   ```bash
+   NEXT_PUBLIC_APP_URL=http://localhost:3000
+   GOOGLE_OAUTH_CLIENT_ID=
+   GOOGLE_OAUTH_CLIENT_SECRET=
+   GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/api/gmail/callback
+   GMAIL_TOKEN_ENCRYPTION_KEY=
+   ```
+
+   Generate the Gmail encryption key with:
+
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
 
 4. Start the app:
@@ -57,6 +75,30 @@ pnpm db:types
 ```
 
 The checked-in `lib/db/types.ts` mirrors the current remote schema so the app and scripts are typed immediately.
+
+For Docker-free remote schema updates:
+
+```bash
+supabase login --token "$SUPABASE_ACCESS_TOKEN"
+supabase link --project-ref "$SUPABASE_PROJECT_REF"
+supabase db push
+pnpm db:types
+```
+
+The Phase 1c migrations add private Supabase Storage under the `media-kits` bucket. PDFs are stored at `media-kits/<user_id>/<kit_id>.pdf`.
+
+## Google OAuth Setup
+
+Before clicking "Connect Gmail" in `/settings`, create a Google OAuth client:
+
+1. In Google Cloud Console, create or open a project.
+2. Enable the Gmail API.
+3. Configure the OAuth consent screen for an external test app and add your Gmail account as a test user.
+4. Create an OAuth 2.0 Web application client.
+5. Add `http://localhost:3000/api/gmail/callback` as an authorized redirect URI.
+6. Copy the client ID and secret into `.env.local` as `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`.
+
+Production will need the Vercel callback URL added too.
 
 ## Seed Athena's Profiles
 
@@ -96,6 +138,18 @@ pnpm test:voice-guide-shape
 
 `pnpm test:onboarding` uses a fake voice guide generator and verifies account basics, creator profiles, voice samples, voice guide versioning, and onboarding completion. `pnpm test:voice-guide-shape` calls the real Anthropic API only when `ANTHROPIC_API_KEY` is set; otherwise it skips cleanly.
 
+## Media Kit, Gmail, And PDF Tests
+
+Run:
+
+```bash
+pnpm test:media-kit
+pnpm test:gmail-encryption
+pnpm test:pdf-render
+```
+
+`pnpm test:media-kit` uses a fake media kit generator and verifies media kit versioning. `pnpm test:gmail-encryption` checks AES-256-GCM refresh-token round trips and tamper detection. `pnpm test:pdf-render` renders a fixture kit to a PDF buffer without uploading to Storage.
+
 ## Useful Commands
 
 ```bash
@@ -108,6 +162,9 @@ pnpm seed --user-id=<uuid>
 pnpm test:rls
 pnpm test:onboarding
 pnpm test:voice-guide-shape
+pnpm test:media-kit
+pnpm test:gmail-encryption
+pnpm test:pdf-render
 ```
 
 ## Repo Structure
@@ -117,7 +174,8 @@ pnpm test:voice-guide-shape
 - `lib/` - shared utilities and service clients
 - `lib/db/` - typed database helpers and generated Supabase types
 - `lib/llm/` - Anthropic client and prompt helpers
-- `lib/gmail/` - Gmail helpers in later phases
+- `lib/gmail/` - Gmail OAuth, encryption, and access-token helpers
+- `lib/pdf/` - server-side PDF rendering
 - `workers/` - Railway-deployed background workers
 - `supabase/migrations/` - forward-only SQL migrations
 - `prompts/` - versioned LLM prompts
