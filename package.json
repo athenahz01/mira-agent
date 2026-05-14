@@ -11,7 +11,9 @@
     "typecheck": "tsc --noEmit",
     "db:types": "node --env-file-if-exists=.env.local scripts/db-types.mjs",
     "seed": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/seed.ts",
-    "test:rls": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-rls.ts"
+    "test:rls": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-rls.ts",
+    "test:onboarding": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-onboarding.ts",
+    "test:voice-guide-shape": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-voice-guide-shape.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",

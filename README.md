@@ -30,6 +30,7 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    NEXT_PUBLIC_SUPABASE_URL=
    NEXT_PUBLIC_SUPABASE_ANON_KEY=
    SUPABASE_SERVICE_ROLE_KEY=
+   ANTHROPIC_API_KEY=
    ```
 
 4. Start the app:
@@ -38,7 +39,7 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    pnpm dev
    ```
 
-5. Open [http://localhost:3000](http://localhost:3000). Sign up at `/signup`, then you'll land on `/dashboard`.
+5. Open [http://localhost:3000](http://localhost:3000). Sign up at `/signup`, complete onboarding at `/onboarding`, then you'll land on `/dashboard`.
 
 ## Supabase
 
@@ -55,7 +56,7 @@ Generate TypeScript database types after migrations apply:
 pnpm db:types
 ```
 
-The checked-in `lib/db/types.ts` mirrors the Phase 1a schema so the app and scripts are typed immediately.
+The checked-in `lib/db/types.ts` mirrors the current remote schema so the app and scripts are typed immediately.
 
 ## Seed Athena's Profiles
 
@@ -72,7 +73,7 @@ The seed script creates:
 - One global outreach rules row
 - One outreach rules row per creator profile
 
-It does not seed voice style guides or media kits; those are Phase 1b.
+It does not seed voice style guides or media kits.
 
 ## RLS Test
 
@@ -84,6 +85,17 @@ pnpm test:rls
 
 The script creates two temporary Supabase Auth users, signs in with the anon key, inserts one brand per user, and verifies user A cannot read, update, or delete user B's brand rows. It cleans up the temporary users at the end.
 
+## Onboarding And Voice Tests
+
+Run:
+
+```bash
+pnpm test:onboarding
+pnpm test:voice-guide-shape
+```
+
+`pnpm test:onboarding` uses a fake voice guide generator and verifies account basics, creator profiles, voice samples, voice guide versioning, and onboarding completion. `pnpm test:voice-guide-shape` calls the real Anthropic API only when `ANTHROPIC_API_KEY` is set; otherwise it skips cleanly.
+
 ## Useful Commands
 
 ```bash
@@ -94,6 +106,8 @@ pnpm build
 pnpm db:types
 pnpm seed --user-id=<uuid>
 pnpm test:rls
+pnpm test:onboarding
+pnpm test:voice-guide-shape
 ```
 
 ## Repo Structure
