@@ -93,7 +93,6 @@ async function requestJson(prompt: string, model: string) {
   const message = await anthropic.messages.create({
     model,
     max_tokens: 2400,
-    temperature: 0.2,
     messages: [
       {
         role: "user",
