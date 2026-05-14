@@ -2,7 +2,7 @@
 
 > Mira is Athena's third named AI agent (after Moana, the chief of staff, and Ingrid, the content strategist). Mira handles brand outreach: sourcing, pitching, follow-ups, and deal tracking.
 > Owner: Athena Huo. Repo: `athenahz01/mira-agent`.
-> Doc version: v0.4 — 2026-05-14 (Phase 2 split into 2a/2b/2c/2d after Phase 1c audit; Section 4.2 split into Wave 1 / Wave 2 to match phasing). This doc is the source of truth for what gets built.
+> Doc version: v0.7 — 2026-05-14 (Connector A switched from Apify to RapidAPI Instagram Scraper Stable API per Athena's existing subscription; richer per-post signals available — `is_paid_partnership`, `sponsor_tags`, `usertags.in[]`). This doc is the source of truth for what gets built.
 
 ---
 
@@ -218,10 +218,11 @@ This is the riskiest and most differentiating piece. Designed as a pipeline of p
 
 ### 4.1 Connectors (each runs on a schedule on Railway)
 
-**Connector A — Competitor reverse-lookup (Apify)**
+**Connector A — Competitor reverse-lookup (RapidAPI)**
 - Input: list of seed creators in your tier and niche (you provide 5–10 per profile, agent suggests more)
-- Output: every brand tagged in their last 90 days of posts, with the post URL, caption, and whether it was tagged as #ad/#partner
-- Apify actor: there are well-maintained IG scraper actors. Use one that respects rate limits.
+- Output: every brand tagged in their last 90 days of posts, with the post URL, caption, and whether it was a paid partnership
+- Uses Athena's RapidAPI subscription to Instagram Scraper Stable API (by RockSolid APIs). Synchronous HTTP requests, no Apify required.
+- Brand signals available per post: `is_paid_partnership` boolean (Instagram-flagged), `sponsor_tags` array (direct sponsor account when present), `usertags.in[]` (accounts tagged in the photo), and caption text (parsed for @mentions + #ad/#sponsored).
 
 **Connector B — Aesthetic-similar brands (LLM + IG)**
 - Input: seed brands you love + your aesthetic_keywords
@@ -598,24 +599,30 @@ Modular, ship pieces as ready (your preference). Each phase produces something u
 - Basic brand pool UI: list, filter by category/excluded/has-contacts, search, inline edit drawer, exclude with reason
 - Dashboard "Brand Pool" card with counts
 
-**Phase 2b — Brand contact enrichment**
-- Hunter.io email finder (domain → contacts)
-- Playwright scraping of brand /contact, /press, /influencers, /collabs pages
-- brand_contacts UI surfaces
+**Phase 2b — Hunter.io contact enrichment + brand_contacts UI**
+- Hunter.io domain-search and email-verifier integration (synchronous, no worker)
+- Per-brand "Find contacts" + bulk "Enrich up to N" actions
+- brand_contacts UI surfaces (per-brand contact list, manual add, mark unreachable)
 - Source attribution + confidence scoring per contact
 
-**Phase 2c — Apify competitor reverse-lookup + fuzzy identity (Wave 2)**
-- Connector A (Apify IG scraper for competitor reverse-lookup)
-- Wave 2 fuzzy matching + ambiguous-match review queue (see Section 4.2)
-- Background worker (Railway) for the long-running scrape jobs
-- Auto-create brand rows from scraped sources
+**Phase 2c — Worker infrastructure + Playwright page scraping**
+- Railway-deployed worker (introduces the worker pattern + jobs queue table)
+- Playwright scraping of brand /contact, /press, /influencers, /collabs pages (fills contact gaps where Hunter found nothing)
+- Job status tracking, retry/backoff, basic observability
+- Bulk enrichment fix: skip no-domain brands without consuming slots
 
-**Phase 2d — Scoring engine + scored ranking UI**
+**Phase 2d — Wave 2 fuzzy matching + RapidAPI competitor reverse-lookup**
+- Wave 2 fuzzy matching + ambiguous-match review queue (see Section 4.2) — lands first because auto-discovery will produce variant brand names
+- Connector A (RapidAPI Instagram Scraper Stable API for competitor reverse-lookup; replaces the originally-planned Apify integration)
+- Auto-create brand rows from scraped sources (uses Wave 2 fuzzy matching)
+- Reuses worker pattern from Phase 2c. New `instagram_scrape` job kind (replacing the originally-planned `apify_scrape`).
+
+**Phase 2e — Scoring engine + scored ranking UI**
 - Per-deal-type rules-based scoring (Section 4.4)
 - Scored ranking + per-deal-type filters in brand pool UI
 - Per-brand card with recommended deal type(s) and score breakdown
 
-(Phase 2 split into 2a/2b/2c/2d after the Phase 1c audit. Each gives a clean audit checkpoint and produces something usable on its own. Original prompts doc had this as a 2a/2b split; further split during planning to keep each phase scoped to one external integration or one new analytical layer.)
+(Phase 2 split into 2a/2b/2c/2d/2e during Phase 2a audit. The Phase 2b/2c split — separating Hunter from Playwright — was made because Hunter is synchronous and worker infrastructure is overkill for it; Playwright needs the worker pattern anyway, so we introduce it once when actually needed. Each phase has one major external dependency or one new analytical layer.)
 
 **Phase 3 — Drafting**
 - Research brief generation

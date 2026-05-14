@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BrandsClient } from "@/app/brands/brands-client";
 import { brandFiltersSchema } from "@/lib/brands/schemas";
 import { listBrandsForUser } from "@/lib/brands/service";
+import { listCompetitorScrapersForUser } from "@/lib/instagram/competitors";
 import { createClient } from "@/lib/supabase/server";
 
 type BrandsPageProps = {
@@ -29,15 +30,21 @@ export default async function BrandsPage({ searchParams }: BrandsPageProps) {
     sort: valueOf(searchParams?.sort) ?? "created_at",
     direction: valueOf(searchParams?.direction) ?? "desc",
   });
-  const brandList = await listBrandsForUser(
-    {
-      supabase,
-      userId: user.id,
-    },
-    filters,
-  );
+  const context = {
+    supabase,
+    userId: user.id,
+  };
+  const [brandList, competitorScrapers] = await Promise.all([
+    listBrandsForUser(context, filters),
+    listCompetitorScrapersForUser(context),
+  ]);
 
-  return <BrandsClient initialList={brandList} />;
+  return (
+    <BrandsClient
+      competitorScrapers={competitorScrapers}
+      initialList={brandList}
+    />
+  );
 }
 
 function valueOf(value: string | string[] | undefined) {

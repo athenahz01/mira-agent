@@ -17,6 +17,12 @@ import {
   normalizeHandle,
 } from "./identity.ts";
 import {
+  findFuzzyBrandCandidates,
+  FUZZY_AUTO_MERGE_THRESHOLD,
+  FUZZY_REVIEW_THRESHOLD,
+  type FuzzyMatchCandidate,
+} from "./fuzzy.ts";
+import {
   brandCsvHeaders,
   brandFiltersSchema,
   brandFormSchema,
@@ -39,15 +45,31 @@ export type BrandContext = {
   userId: string;
 };
 
-export type FindOrCreateBrandResult = {
-  brand: Tables<"brands">;
-  created: boolean;
-  promoted: boolean;
-};
+export type BrandMatchSource =
+  | "manual_seed"
+  | "csv_import"
+  | "instagram_scrape";
+
+export type FindOrCreateBrandResult =
+  | {
+      brand: Tables<"brands">;
+      created: boolean;
+      promoted: boolean;
+      auto_merged?: boolean;
+      queued_for_review?: false;
+    }
+  | {
+      brand: null;
+      created: false;
+      promoted: false;
+      queued_for_review: true;
+      proposal_id: string;
+    };
 
 export type CsvImportResult = {
   created: number;
   merged: number;
+  queued_for_review: number;
   skipped: { row_number: number; reason: string }[];
 };
 
@@ -66,20 +88,36 @@ export type BrandListResult = {
   totalPages: number;
   categoryOptions: string[];
   unenrichedHunterCount: number;
+  openMatchProposalCount: number;
   filters: BrandFilters;
 };
 
 export type BrandPoolSummary = {
   total: number;
   excluded: number;
+  openMatchProposals: number;
   totalContacts: number;
   brandsWithContacts: number;
   topCategories: { category: string; count: number }[];
 };
 
+export type BrandMatchProposalWithCandidates =
+  Tables<"brand_match_proposals"> & {
+    candidates: Tables<"brands">[];
+  };
+
+export type BrandMatchProposalResolution =
+  | { action: "merge_into"; candidateId: string }
+  | { action: "create_new" }
+  | { action: "dismiss" };
+
 export async function findOrCreateBrand(
   context: BrandContext,
   input: BrandFormInput,
+  options: {
+    source?: BrandMatchSource;
+    skipFuzzy?: boolean;
+  } = {},
 ): Promise<FindOrCreateBrandResult> {
   const values = normalizeBrandValues(brandFormSchema.parse(input));
   const primaryIdentityKey = brandIdentityKey(values);
@@ -100,24 +138,77 @@ export async function findOrCreateBrand(
     pickExistingBrand(existingRows ?? [], candidateKeys) ??
     (await findByStoredIdentityFields(context, values));
 
-  if (!existing) {
-    const { data, error } = await context.supabase
-      .from("brands")
-      .insert(toBrandInsert(context.userId, primaryIdentityKey, values))
-      .select("*")
-      .single();
-
-    if (error || !data) {
-      throw new Error(error?.message ?? "Could not create brand.");
-    }
-
-    return {
-      brand: data,
-      created: true,
-      promoted: false,
-    };
+  if (existing) {
+    return mergeExistingBrand(context, existing, values, primaryIdentityKey);
   }
 
+  if (!options.skipFuzzy) {
+    const fuzzyCandidates = await findFuzzyBrandCandidates(context, values);
+    const topCandidate = fuzzyCandidates[0];
+
+    if (topCandidate && topCandidate.score >= FUZZY_AUTO_MERGE_THRESHOLD) {
+      const candidateBrand = await loadBrand(context, topCandidate.brand_id);
+      const result = await mergeExistingBrand(
+        context,
+        candidateBrand,
+        values,
+        primaryIdentityKey,
+      );
+
+      return {
+        ...result,
+        auto_merged: true,
+      };
+    }
+
+    if (topCandidate && topCandidate.score >= FUZZY_REVIEW_THRESHOLD) {
+      const proposal = await createBrandMatchProposal(context, {
+        incoming: input,
+        candidates: fuzzyCandidates.slice(0, 3),
+        source: options.source ?? "manual_seed",
+      });
+
+      return {
+        brand: null,
+        created: false,
+        promoted: false,
+        queued_for_review: true,
+        proposal_id: proposal.id,
+      };
+    }
+  }
+
+  return createBrand(context, primaryIdentityKey, values);
+}
+
+async function createBrand(
+  context: BrandContext,
+  primaryIdentityKey: string,
+  values: ReturnType<typeof normalizeBrandValues<BrandFormValues>>,
+) {
+  const { data, error } = await context.supabase
+    .from("brands")
+    .insert(toBrandInsert(context.userId, primaryIdentityKey, values))
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Could not create brand.");
+  }
+
+  return {
+    brand: data,
+    created: true,
+    promoted: false,
+  };
+}
+
+async function mergeExistingBrand(
+  context: BrandContext,
+  existing: Tables<"brands">,
+  values: ReturnType<typeof normalizeBrandValues<BrandFormValues>>,
+  primaryIdentityKey: string,
+) {
   const promoted =
     primaryIdentityKey !== existing.identity_key &&
     identityKeyRank(primaryIdentityKey) < identityKeyRank(existing.identity_key);
@@ -141,16 +232,72 @@ export async function findOrCreateBrand(
   };
 }
 
+async function loadBrand(
+  context: BrandContext,
+  brandId: string,
+): Promise<Tables<"brands">> {
+  const { data, error } = await context.supabase
+    .from("brands")
+    .select("*")
+    .eq("id", brandId)
+    .eq("user_id", context.userId)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Brand not found.");
+  }
+
+  return data;
+}
+
+async function createBrandMatchProposal(
+  context: BrandContext,
+  input: {
+    incoming: BrandFormInput;
+    candidates: FuzzyMatchCandidate[];
+    source: BrandMatchSource;
+  },
+): Promise<Tables<"brand_match_proposals">> {
+  const normalizedScores = input.candidates.map((candidate) =>
+    Number(candidate.score.toFixed(4)),
+  );
+  const { data, error } = await context.supabase
+    .from("brand_match_proposals")
+    .insert({
+      user_id: context.userId,
+      incoming_payload_json: brandFormSchema.parse(input.incoming) as Json,
+      candidate_brand_ids: input.candidates.map(
+        (candidate) => candidate.brand_id,
+      ),
+      candidate_scores: normalizedScores,
+      source: input.source,
+      status: "open",
+    })
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Could not queue brand match proposal.");
+  }
+
+  return data;
+}
+
 export async function addBrandManualForUser(
   context: BrandContext,
   input: BrandFormInput,
 ): Promise<FindOrCreateBrandResult> {
-  const result = await findOrCreateBrand(context, input);
-  await insertSourceSignal(context, {
-    brandId: result.brand.id,
-    signalType: "manual_seed",
-    evidence: brandFormSchema.parse(input),
+  const result = await findOrCreateBrand(context, input, {
+    source: "manual_seed",
   });
+
+  if (result.brand) {
+    await insertSourceSignal(context, {
+      brandId: result.brand.id,
+      signalType: "manual_seed",
+      evidence: brandFormSchema.parse(input),
+    });
+  }
 
   return result;
 }
@@ -183,6 +330,7 @@ export async function addBrandsFromCsvForUser(
     return {
       created: 0,
       merged: 0,
+      queued_for_review: 0,
       skipped: [
         {
           row_number: 1,
@@ -194,6 +342,7 @@ export async function addBrandsFromCsvForUser(
 
   let created = 0;
   let merged = 0;
+  let queuedForReview = 0;
   const rowsToProcess = parsed.data.slice(0, CSV_IMPORT_ROW_CAP);
 
   if (parsed.data.length > CSV_IMPORT_ROW_CAP) {
@@ -230,17 +379,24 @@ export async function addBrandsFromCsvForUser(
     }
 
     try {
-      const result = await findOrCreateBrand(context, inputResult.input);
-      await insertSourceSignal(context, {
-        brandId: result.brand.id,
-        signalType: "csv_import",
-        evidence: rowResult.data,
+      const result = await findOrCreateBrand(context, inputResult.input, {
+        source: "csv_import",
       });
 
-      if (result.created) {
+      if (result.queued_for_review) {
+        queuedForReview += 1;
+      } else if (result.created) {
         created += 1;
       } else {
         merged += 1;
+      }
+
+      if (result.brand) {
+        await insertSourceSignal(context, {
+          brandId: result.brand.id,
+          signalType: "csv_import",
+          evidence: rowResult.data,
+        });
       }
     } catch (error) {
       skipped.push({
@@ -253,6 +409,7 @@ export async function addBrandsFromCsvForUser(
   return {
     created,
     merged,
+    queued_for_review: queuedForReview,
     skipped,
   };
 }
@@ -317,6 +474,138 @@ export async function toggleBrandExcludedForUser(
   return data;
 }
 
+export async function listOpenBrandMatchProposals(
+  context: BrandContext,
+): Promise<BrandMatchProposalWithCandidates[]> {
+  const { data: proposals, error } = await context.supabase
+    .from("brand_match_proposals")
+    .select("*")
+    .eq("user_id", context.userId)
+    .eq("status", "open")
+    .order("created_at", {
+      ascending: false,
+    });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const candidateIds = uniqueSorted(
+    (proposals ?? []).flatMap((proposal) => proposal.candidate_brand_ids),
+  );
+  const { data: candidates, error: candidatesError } =
+    candidateIds.length > 0
+      ? await context.supabase
+          .from("brands")
+          .select("*")
+          .eq("user_id", context.userId)
+          .in("id", candidateIds)
+      : { data: [], error: null };
+
+  if (candidatesError) {
+    throw new Error(candidatesError.message);
+  }
+
+  const brandsById = new Map(
+    (candidates ?? []).map((candidate) => [candidate.id, candidate]),
+  );
+
+  return (proposals ?? []).map((proposal) => ({
+    ...proposal,
+    candidates: proposal.candidate_brand_ids
+      .map((brandId) => brandsById.get(brandId))
+      .filter((brand): brand is Tables<"brands"> => Boolean(brand)),
+  }));
+}
+
+export async function resolveBrandMatchProposalForUser(
+  context: BrandContext,
+  proposalId: string,
+  resolution: BrandMatchProposalResolution,
+): Promise<Tables<"brand_match_proposals">> {
+  const { data: proposal, error } = await context.supabase
+    .from("brand_match_proposals")
+    .select("*")
+    .eq("id", proposalId)
+    .eq("user_id", context.userId)
+    .eq("status", "open")
+    .single();
+
+  if (error || !proposal) {
+    throw new Error(error?.message ?? "Brand match proposal not found.");
+  }
+
+  if (resolution.action === "dismiss") {
+    return updateProposalResolution(context, proposal.id, {
+      status: "dismissed",
+      resolved_brand_id: null,
+    });
+  }
+
+  const incoming = brandFormSchema.parse(proposal.incoming_payload_json);
+  let resolvedBrand: Tables<"brands">;
+
+  if (resolution.action === "merge_into") {
+    if (!proposal.candidate_brand_ids.includes(resolution.candidateId)) {
+      throw new Error("Choose one of the proposed candidate brands.");
+    }
+
+    const candidateBrand = await loadBrand(context, resolution.candidateId);
+    const values = normalizeBrandValues(incoming);
+    const primaryIdentityKey = brandIdentityKey(values);
+    const result = await mergeExistingBrand(
+      context,
+      candidateBrand,
+      values,
+      primaryIdentityKey,
+    );
+    resolvedBrand = result.brand;
+  } else {
+    const result = await findOrCreateBrand(context, incoming, {
+      skipFuzzy: true,
+      source: readBrandMatchSource(proposal.source),
+    });
+
+    if (!result.brand) {
+      throw new Error("Could not create brand from proposal.");
+    }
+
+    resolvedBrand = result.brand;
+  }
+
+  return updateProposalResolution(context, proposal.id, {
+    status: resolution.action === "merge_into" ? "merged_into" : "created_new",
+    resolved_brand_id: resolvedBrand.id,
+  });
+}
+
+async function updateProposalResolution(
+  context: BrandContext,
+  proposalId: string,
+  values: Pick<
+    TablesUpdate<"brand_match_proposals">,
+    "status" | "resolved_brand_id"
+  >,
+): Promise<Tables<"brand_match_proposals">> {
+  const { data, error } = await context.supabase
+    .from("brand_match_proposals")
+    .update({
+      ...values,
+      resolved_at: new Date().toISOString(),
+      resolved_by: context.userId,
+    })
+    .eq("id", proposalId)
+    .eq("user_id", context.userId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Could not resolve proposal.");
+  }
+
+  return data;
+}
+
 export async function listBrandsForUser(
   context: BrandContext,
   rawFilters: Partial<BrandFilters>,
@@ -327,6 +616,7 @@ export async function listBrandsForUser(
     contactsResult,
     signalsResult,
     jobsResult,
+    proposalsResult,
   ] = await Promise.all([
       context.supabase
         .from("brands")
@@ -352,6 +642,14 @@ export async function listBrandsForUser(
         .order("created_at", {
           ascending: false,
         }),
+      context.supabase
+        .from("brand_match_proposals")
+        .select("id", {
+          count: "exact",
+          head: true,
+        })
+        .eq("user_id", context.userId)
+        .eq("status", "open"),
     ]);
 
   if (brandsError) {
@@ -368,6 +666,10 @@ export async function listBrandsForUser(
 
   if (jobsResult.error) {
     throw new Error(jobsResult.error.message);
+  }
+
+  if (proposalsResult.error) {
+    throw new Error(proposalsResult.error.message);
   }
 
   const contactsByBrandId = groupContactsByBrand(contactsResult.data ?? []);
@@ -406,6 +708,7 @@ export async function listBrandsForUser(
     unenrichedHunterCount: (brands ?? []).filter(
       (brand) => brand.domain && !hunterEnrichedBrandIds.has(brand.id),
     ).length,
+    openMatchProposalCount: proposalsResult.count ?? 0,
     filters: {
       ...filters,
       page,
@@ -416,13 +719,27 @@ export async function listBrandsForUser(
 export async function getBrandPoolSummary(
   context: BrandContext,
 ): Promise<BrandPoolSummary> {
-  const { data, error } = await context.supabase
-    .from("brands")
-    .select("id,category,excluded")
-    .eq("user_id", context.userId);
+  const [{ data, error }, proposalsResult] = await Promise.all([
+    context.supabase
+      .from("brands")
+      .select("id,category,excluded")
+      .eq("user_id", context.userId),
+    context.supabase
+      .from("brand_match_proposals")
+      .select("id", {
+        count: "exact",
+        head: true,
+      })
+      .eq("user_id", context.userId)
+      .eq("status", "open"),
+  ]);
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  if (proposalsResult.error) {
+    throw new Error(proposalsResult.error.message);
   }
 
   const categoryCounts = new Map<string, number>();
@@ -449,6 +766,7 @@ export async function getBrandPoolSummary(
   return {
     total: data?.length ?? 0,
     excluded: (data ?? []).filter((brand) => brand.excluded).length,
+    openMatchProposals: proposalsResult.count ?? 0,
     totalContacts: contacts?.length ?? 0,
     brandsWithContacts: contactBrandIds.size,
     topCategories: [...categoryCounts.entries()]
@@ -735,6 +1053,18 @@ function splitCell(value: string) {
     .split(";")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function readBrandMatchSource(source: string): BrandMatchSource {
+  if (
+    source === "manual_seed" ||
+    source === "csv_import" ||
+    source === "instagram_scrape"
+  ) {
+    return source;
+  }
+
+  return "manual_seed";
 }
 
 function applyBrandFilters(rows: BrandListRow[], filters: BrandFilters) {

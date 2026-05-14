@@ -40,7 +40,7 @@ const service = createClient<Database>(
 );
 let createdUserId: string | null = null;
 
-function assert(condition: boolean, message: string) {
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
@@ -171,6 +171,11 @@ async function main() {
     size_estimate: null,
     notes: "same stored handle",
   });
+
+  assert(first.brand, "First brand should return a row.");
+  assert(second.brand, "Second brand should return a row.");
+  assert(promoted.brand, "Promoted brand should return a row.");
+  assert(handleOnly.brand, "Handle-only brand should return a row.");
 
   assert(first.created, "First brand should be created.");
   assert(!second.created, "Second same-name brand should merge.");

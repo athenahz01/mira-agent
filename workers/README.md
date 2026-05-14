@@ -1,8 +1,12 @@
 # Mira Worker
 
 The worker is a long-running Node process for jobs that should not run inside
-the Next.js request cycle. Phase 2c uses it for `page_scrape` jobs: polite
-Playwright scraping of brand contact, press, partnership, and about pages.
+the Next.js request cycle. It currently handles:
+
+- `page_scrape`: polite Playwright scraping of brand contact, press,
+  partnership, and about pages.
+- `instagram_scrape`: RapidAPI Instagram competitor reverse-lookup for
+  sponsored brand tags.
 
 ## Local Setup
 
@@ -18,11 +22,16 @@ Required local env vars live in `../.env.local`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape
-WORKER_ID=local-page-scrape
+WORKER_KIND=page_scrape,instagram_scrape
+WORKER_ID=local-mira-worker
+RAPIDAPI_KEY=
+RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
+RAPIDAPI_INSTAGRAM_RATE_LIMIT_PER_MINUTE=30
 ```
 
 `WORKER_ID` is optional. If omitted, the worker generates a UUID at startup.
+`WORKER_KIND` accepts a single kind, a comma-separated list such as
+`page_scrape,instagram_scrape`, or `all`.
 
 Run locally from the repo root:
 
@@ -33,11 +42,11 @@ pnpm worker:dev
 You should see:
 
 ```text
-worker starting, id=<uuid>, kind=page_scrape
+worker starting, id=<uuid>, kinds=page_scrape,instagram_scrape
 ```
 
-Then open `/brands`, enqueue a page scrape job, and watch the worker logs for
-claim/complete/fail messages.
+Then open `/brands`, enqueue a page scrape or Instagram scrape job, and watch
+the worker logs for claim/complete/fail messages.
 
 ## Railway Deployment
 
@@ -52,13 +61,25 @@ yet. When ready:
 ```bash
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape
-WORKER_ID=railway-page-scrape-1
+WORKER_KIND=page_scrape,instagram_scrape
+WORKER_ID=railway-mira-worker-1
+RAPIDAPI_KEY=
+RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
+RAPIDAPI_INSTAGRAM_RATE_LIMIT_PER_MINUTE=30
 ```
 
 Use the same Supabase project as the Vercel app. `SUPABASE_SERVICE_ROLE_KEY`
 is required because the worker claims jobs through the service-role-only
 `claim_next_job` RPC and writes scrape results back to tenant-scoped tables.
+
+For the cheaper one-worker Railway Hobby setup, use:
+
+```bash
+WORKER_KIND=page_scrape,instagram_scrape
+```
+
+The worker loop tries each kind in order on every tick and claims the first
+available job. `WORKER_KIND=all` is a shorthand for the same two current kinds.
 
 The Docker image uses the official Playwright base image, so Chromium is
 already installed in the container.

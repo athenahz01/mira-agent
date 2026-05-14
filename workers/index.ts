@@ -9,20 +9,21 @@ import {
   failJob,
   type JobKind,
 } from "../lib/jobs/queue.ts";
+import { processInstagramScrapeJob } from "./scrapers/instagram-scrape.ts";
 import { processPageScrapeJob } from "./scrapers/page-scrape.ts";
 
 const workerId = process.env.WORKER_ID ?? randomUUID();
-const workerKind = readWorkerKind();
+const workerKinds = readWorkerKinds();
 const supabase = createWorkerSupabaseClient();
 let shuttingDown = false;
 
 process.on("SIGTERM", requestShutdown);
 process.on("SIGINT", requestShutdown);
 
-console.log(`worker starting, id=${workerId}, kind=${workerKind}`);
+console.log(`worker starting, id=${workerId}, kinds=${workerKinds.join(",")}`);
 
 while (!shuttingDown) {
-  const job = await claimNextJob(supabase, workerId, workerKind);
+  const job = await claimNextAvailableJob();
 
   if (!job) {
     await sleep(5_000);
@@ -54,11 +55,23 @@ async function dispatchJob(job: Tables<"jobs">): Promise<Json> {
   switch (job.kind) {
     case "page_scrape":
       return (await processPageScrapeJob(supabase, job)) as Json;
-    case "apify_scrape":
-      throw new Error("apify_scrape is not implemented until Phase 2d.");
+    case "instagram_scrape":
+      return (await processInstagramScrapeJob(supabase, job)) as Json;
     default:
       throw new Error(`Unknown job kind: ${job.kind}`);
   }
+}
+
+async function claimNextAvailableJob() {
+  for (const kind of workerKinds) {
+    const job = await claimNextJob(supabase, workerId, kind);
+
+    if (job) {
+      return job;
+    }
+  }
+
+  return null;
 }
 
 function createWorkerSupabaseClient() {
@@ -79,14 +92,30 @@ function createWorkerSupabaseClient() {
   });
 }
 
-function readWorkerKind(): JobKind {
+function readWorkerKinds(): JobKind[] {
   const value = process.env.WORKER_KIND ?? "page_scrape";
+  const rawKinds =
+    value.trim().toLowerCase() === "all"
+      ? ["page_scrape", "instagram_scrape"]
+      : value.split(",").map((kind) => kind.trim());
+  const kinds: JobKind[] = [];
 
-  if (value === "page_scrape" || value === "apify_scrape") {
-    return value;
+  for (const kind of rawKinds) {
+    if (kind === "page_scrape" || kind === "instagram_scrape") {
+      if (!kinds.includes(kind)) {
+        kinds.push(kind);
+      }
+      continue;
+    }
+
+    throw new Error(`Unsupported WORKER_KIND: ${value}`);
   }
 
-  throw new Error(`Unsupported WORKER_KIND: ${value}`);
+  if (kinds.length === 0) {
+    throw new Error("WORKER_KIND must include at least one supported kind.");
+  }
+
+  return kinds;
 }
 
 function requestShutdown() {

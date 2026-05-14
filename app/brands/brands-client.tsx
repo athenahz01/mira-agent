@@ -7,15 +7,19 @@ import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
+  addCompetitorHandle,
   addBrandContactManual,
   addBrandManual,
   addBrandsFromCsv,
   enrichBrandContacts,
   enrichUnenrichedBrands,
+  enqueueAllCompetitorScrapes,
   enqueueBulkPageScrape,
+  enqueueInstagramCompetitorScrape,
   enqueuePageScrapeForBrand,
   getBrandJobStatus,
   markContactUnreachable,
+  removeCompetitorHandle,
   toggleBrandExcluded,
   updateBrand,
 } from "@/app/actions/brands";
@@ -59,6 +63,11 @@ import type {
   BulkPageScrapeEnqueueResult,
   PageScrapeJobSummary,
 } from "@/lib/jobs/brand-page-scrape";
+import type {
+  BulkInstagramScrapeEnqueueResult,
+  CompetitorScraperPanelData,
+  InstagramScrapeJobSummary,
+} from "@/lib/instagram/competitors";
 
 type SizeInput =
   | "pre-launch"
@@ -150,7 +159,13 @@ const emptyContactForm: ContactFormState = {
   role: "unknown",
 };
 
-export function BrandsClient({ initialList }: { initialList: BrandListResult }) {
+export function BrandsClient({
+  initialList,
+  competitorScrapers,
+}: {
+  initialList: BrandListResult;
+  competitorScrapers: CompetitorScraperPanelData;
+}) {
   const router = useRouter();
   const [manualForm, setManualForm] = useState<BrandFormState>(emptyBrandForm);
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
@@ -159,6 +174,11 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
   );
   const [bulkScrapeResult, setBulkScrapeResult] =
     useState<BulkPageScrapeEnqueueResult | null>(null);
+  const [instagramBulkResult, setInstagramBulkResult] =
+    useState<BulkInstagramScrapeEnqueueResult | null>(null);
+  const [competitorInputs, setCompetitorInputs] = useState<
+    Record<string, string>
+  >({});
   const [contactResult, setContactResult] =
     useState<ContactDiscoveryResult | null>(null);
   const [pageScrapeJob, setPageScrapeJob] =
@@ -181,6 +201,7 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
   const [isImporting, startImporting] = useTransition();
   const [isEnriching, startEnriching] = useTransition();
   const [isScraping, startScraping] = useTransition();
+  const [isCompetitorPending, startCompetitorTransition] = useTransition();
   const [contactForm, setContactForm] =
     useState<ContactFormState>(emptyContactForm);
   const activeEditingBrand = editingBrand
@@ -235,8 +256,12 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
         return;
       }
 
-      toast.success(result.data.created ? "Brand created." : "Brand merged.");
-      setManualForm(emptyBrandForm);
+      if (result.data.queued_for_review) {
+        toast.info("Similar brand found. Review it in match proposals.");
+      } else {
+        toast.success(result.data.created ? "Brand created." : "Brand merged.");
+        setManualForm(emptyBrandForm);
+      }
       refreshBrands();
     });
   }
@@ -349,6 +374,73 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
       }
 
       setBulkScrapeResult(result.data);
+      toast.success(result.message);
+      refreshBrands();
+    });
+  }
+
+  function submitCompetitorHandle(
+    profileId: string,
+    event: React.FormEvent<HTMLFormElement>,
+  ) {
+    event.preventDefault();
+    const handle = competitorInputs[profileId] ?? "";
+
+    startCompetitorTransition(async () => {
+      const result = await addCompetitorHandle(profileId, handle);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setCompetitorInputs((current) => ({
+        ...current,
+        [profileId]: "",
+      }));
+      toast.success(result.message);
+      refreshBrands();
+    });
+  }
+
+  function scrapeCompetitor(competitorHandleId: string) {
+    startCompetitorTransition(async () => {
+      const result = await enqueueInstagramCompetitorScrape(competitorHandleId);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success(result.message);
+      refreshBrands();
+    });
+  }
+
+  function scrapeAllCompetitors(profileId: string) {
+    startCompetitorTransition(async () => {
+      const result = await enqueueAllCompetitorScrapes(profileId);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      setInstagramBulkResult(result.data);
+      toast.success(result.message);
+      refreshBrands();
+    });
+  }
+
+  function deleteCompetitor(competitorHandleId: string) {
+    startCompetitorTransition(async () => {
+      const result = await removeCompetitorHandle(competitorHandleId);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
       toast.success(result.message);
       refreshBrands();
     });
@@ -485,6 +577,16 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
           <Button asChild variant="outline">
             <a href="/dashboard">Dashboard</a>
           </Button>
+          <Button asChild variant="outline">
+            <a href="/brands/proposals">
+              Match proposals
+              {initialList.openMatchProposalCount > 0 ? (
+                <Badge variant="secondary">
+                  {initialList.openMatchProposalCount}
+                </Badge>
+              ) : null}
+            </a>
+          </Button>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-3">
@@ -579,6 +681,7 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
                 <div className="mt-5 rounded-md border bg-background p-4 text-sm">
                   <p className="font-medium">
                     {csvResult.created} created, {csvResult.merged} merged,{" "}
+                    {csvResult.queued_for_review} queued for review,{" "}
                     {csvResult.skipped.length} skipped
                   </p>
                   {csvResult.skipped.length > 0 ? (
@@ -609,6 +712,23 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
             </CardContent>
           </Card>
         </div>
+
+        <CompetitorScrapersPanel
+          data={competitorScrapers}
+          inputs={competitorInputs}
+          isPending={isCompetitorPending}
+          onAdd={submitCompetitorHandle}
+          onChangeInput={(profileId, value) =>
+            setCompetitorInputs((current) => ({
+              ...current,
+              [profileId]: value,
+            }))
+          }
+          onRemove={deleteCompetitor}
+          onScrapeAll={scrapeAllCompetitors}
+          onScrapeOne={scrapeCompetitor}
+          result={instagramBulkResult}
+        />
 
         <Card>
           <CardHeader>
@@ -704,6 +824,158 @@ export function BrandsClient({ initialList }: { initialList: BrandListResult }) 
         </DialogContent>
       </Dialog>
     </main>
+  );
+}
+
+function CompetitorScrapersPanel({
+  data,
+  inputs,
+  result,
+  isPending,
+  onAdd,
+  onChangeInput,
+  onRemove,
+  onScrapeAll,
+  onScrapeOne,
+}: {
+  data: CompetitorScraperPanelData;
+  inputs: Record<string, string>;
+  result: BulkInstagramScrapeEnqueueResult | null;
+  isPending: boolean;
+  onAdd: (
+    profileId: string,
+    event: React.FormEvent<HTMLFormElement>,
+  ) => void;
+  onChangeInput: (profileId: string, value: string) => void;
+  onRemove: (competitorHandleId: string) => void;
+  onScrapeAll: (profileId: string) => void;
+  onScrapeOne: (competitorHandleId: string) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Competitor scrapers</CardTitle>
+        <CardDescription>
+          Add creator accounts Athena studies, then Mira can pull sponsored
+          brand tags from their recent posts.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        {data.profiles.map((profile) => {
+          const handles = data.handles.filter(
+            (handle) => handle.creator_profile_id === profile.id,
+          );
+
+          return (
+            <div className="grid gap-3 rounded-md border p-4" key={profile.id}>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium">@{profile.handle}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {profile.display_name}
+                  </p>
+                </div>
+                <Button
+                  disabled={isPending || handles.length === 0}
+                  onClick={() => onScrapeAll(profile.id)}
+                  type="button"
+                  variant="outline"
+                >
+                  {isPending ? <Loader2 className="animate-spin" /> : null}
+                  Run all
+                </Button>
+              </div>
+
+              <form
+                className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"
+                onSubmit={(event) => onAdd(profile.id, event)}
+              >
+                <Input
+                  onChange={(event) =>
+                    onChangeInput(profile.id, event.target.value)
+                  }
+                  placeholder="@competitor or instagram.com/competitor"
+                  value={inputs[profile.id] ?? ""}
+                />
+                <Button disabled={isPending} type="submit">
+                  <Plus />
+                  Add handle
+                </Button>
+              </form>
+
+              <div className="grid gap-2">
+                {handles.length === 0 ? (
+                  <p className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
+                    No competitor handles yet.
+                  </p>
+                ) : (
+                  handles.map((handle) => (
+                    <div
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-background p-3 text-sm"
+                      key={handle.id}
+                    >
+                      <div>
+                        <p className="font-medium">@{handle.handle}</p>
+                        <p className="text-muted-foreground">
+                          Last scraped:{" "}
+                          {handle.last_scraped_at
+                            ? new Date(
+                                handle.last_scraped_at,
+                              ).toLocaleDateString()
+                            : "Never"}
+                        </p>
+                        {handle.latest_job ? (
+                          <p className="text-muted-foreground">
+                            {instagramJobLabel(handle.latest_job)}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          disabled={
+                            isPending ||
+                            Boolean(
+                              handle.latest_job &&
+                                ["queued", "running"].includes(
+                                  handle.latest_job.status,
+                                ),
+                            )
+                          }
+                          onClick={() => onScrapeOne(handle.id)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          {isPending ? (
+                            <Loader2 className="animate-spin" />
+                          ) : null}
+                          Scrape now
+                        </Button>
+                        <Button
+                          disabled={isPending}
+                          onClick={() => onRemove(handle.id)}
+                          size="sm"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {result ? (
+          <p className="rounded-md border bg-background p-3 text-sm text-muted-foreground">
+            {result.enqueued} Instagram scrape jobs queued, {result.skipped}{" "}
+            skipped.
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1444,6 +1716,35 @@ function pageScrapeJobLabel(job: PageScrapeJobSummary) {
   return "Scraping cancelled.";
 }
 
+function instagramJobLabel(job: InstagramScrapeJobSummary) {
+  if (job.status === "queued") {
+    return "Instagram scrape queued.";
+  }
+
+  if (job.status === "running") {
+    return "Reading recent sponsored posts now.";
+  }
+
+  if (job.status === "succeeded") {
+    const created = readNumberFromJobResult(job.result_json, "brands_created");
+    const merged = readNumberFromJobResult(job.result_json, "brands_merged");
+    const queued = readNumberFromJobResult(
+      job.result_json,
+      "brands_queued_for_review",
+    );
+
+    return `Last run: ${created ?? 0} created, ${merged ?? 0} merged, ${
+      queued ?? 0
+    } queued.`;
+  }
+
+  if (job.status === "failed") {
+    return job.error_message ?? "Instagram scrape failed.";
+  }
+
+  return "Instagram scrape cancelled.";
+}
+
 function readContactsFound(resultJson: Tables<"jobs">["result_json"]) {
   if (!resultJson || typeof resultJson !== "object" || Array.isArray(resultJson)) {
     return null;
@@ -1452,6 +1753,19 @@ function readContactsFound(resultJson: Tables<"jobs">["result_json"]) {
   const contacts = resultJson.contacts;
 
   return Array.isArray(contacts) ? contacts.length : null;
+}
+
+function readNumberFromJobResult(
+  resultJson: Tables<"jobs">["result_json"],
+  key: string,
+) {
+  if (!resultJson || typeof resultJson !== "object" || Array.isArray(resultJson)) {
+    return null;
+  }
+
+  const value = resultJson[key];
+
+  return typeof value === "number" ? value : null;
 }
 
 function confidenceLabel(confidence: number | null) {

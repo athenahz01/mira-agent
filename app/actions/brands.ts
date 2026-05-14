@@ -10,10 +10,12 @@ import {
   addBrandManualForUser,
   addBrandsFromCsvForUser,
   listBrandsForUser,
+  resolveBrandMatchProposalForUser,
   toggleBrandExcludedForUser,
   updateBrandForUser,
   type BrandContext,
   type BrandListResult,
+  type FindOrCreateBrandResult,
   type CsvImportResult,
 } from "@/lib/brands/service";
 import { brandFiltersSchema } from "@/lib/brands/schemas";
@@ -35,9 +37,20 @@ import {
   type BulkPageScrapeEnqueueResult,
   type PageScrapeJobSummary,
 } from "@/lib/jobs/brand-page-scrape";
+import {
+  addCompetitorHandleForUser,
+  enqueueAllCompetitorScrapesForUser,
+  enqueueInstagramCompetitorScrapeForUser,
+  removeCompetitorHandleForUser,
+  type BulkInstagramScrapeEnqueueResult,
+  type InstagramScrapeJobSummary,
+} from "@/lib/instagram/competitors";
 
 const brandIdSchema = z.string().uuid();
 const contactIdSchema = z.string().uuid();
+const creatorProfileIdSchema = z.string().uuid();
+const competitorHandleIdSchema = z.string().uuid();
+const competitorHandleSchema = z.string().trim().min(1);
 const toggleExcludedSchema = z.object({
   id: z.string().uuid(),
   excluded: z.boolean(),
@@ -46,13 +59,7 @@ const toggleExcludedSchema = z.object({
 
 export async function addBrandManual(
   input: BrandFormInput,
-): Promise<
-  ActionResult<{
-    brand: Tables<"brands">;
-    created: boolean;
-    promoted: boolean;
-  }>
-> {
+): Promise<ActionResult<FindOrCreateBrandResult>> {
   return runBrandAction("Brand saved.", async (context) =>
     addBrandManualForUser(context, input),
   );
@@ -174,6 +181,80 @@ export async function enqueueBulkPageScrape(): Promise<
   );
 }
 
+export async function resolveBrandMatchProposal(
+  proposalId: string,
+  input:
+    | { action: "merge_into"; candidateId: string }
+    | { action: "create_new" }
+    | { action: "dismiss" },
+): Promise<ActionResult<Tables<"brand_match_proposals">>> {
+  const proposalIdValue = z.string().uuid().parse(proposalId);
+  const resolution = z
+    .discriminatedUnion("action", [
+      z.object({
+        action: z.literal("merge_into"),
+        candidateId: z.string().uuid(),
+      }),
+      z.object({
+        action: z.literal("create_new"),
+      }),
+      z.object({
+        action: z.literal("dismiss"),
+      }),
+    ])
+    .parse(input);
+
+  return runBrandAction("Brand match resolved.", async (context) =>
+    resolveBrandMatchProposalForUser(context, proposalIdValue, resolution),
+  );
+}
+
+export async function addCompetitorHandle(
+  creatorProfileId: string,
+  handle: string,
+): Promise<ActionResult<Tables<"competitor_handles">>> {
+  return runBrandAction("Competitor handle saved.", async (context) =>
+    addCompetitorHandleForUser(
+      context,
+      creatorProfileIdSchema.parse(creatorProfileId),
+      competitorHandleSchema.parse(handle),
+    ),
+  );
+}
+
+export async function removeCompetitorHandle(
+  competitorHandleId: string,
+): Promise<ActionResult<void>> {
+  return runBrandAction("Competitor handle removed.", async (context) =>
+    removeCompetitorHandleForUser(
+      context,
+      competitorHandleIdSchema.parse(competitorHandleId),
+    ),
+  );
+}
+
+export async function enqueueInstagramCompetitorScrape(
+  competitorHandleId: string,
+): Promise<ActionResult<InstagramScrapeJobSummary>> {
+  return runBrandAction("Instagram scrape queued.", async (context) =>
+    enqueueInstagramCompetitorScrapeForUser(
+      context,
+      competitorHandleIdSchema.parse(competitorHandleId),
+    ),
+  );
+}
+
+export async function enqueueAllCompetitorScrapes(
+  creatorProfileId: string,
+): Promise<ActionResult<BulkInstagramScrapeEnqueueResult>> {
+  return runBrandAction("Instagram scrapes queued.", async (context) =>
+    enqueueAllCompetitorScrapesForUser(
+      context,
+      creatorProfileIdSchema.parse(creatorProfileId),
+    ),
+  );
+}
+
 async function runBrandAction<T>(
   message: string,
   callback: (context: BrandContext) => Promise<T>,
@@ -182,6 +263,7 @@ async function runBrandAction<T>(
     const context = await getBrandContext();
     const data = await callback(context);
     revalidatePath("/brands");
+    revalidatePath("/brands/proposals");
     revalidatePath("/dashboard");
 
     return {

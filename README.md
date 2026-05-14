@@ -11,7 +11,7 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
 - Anthropic for voice and media-kit generation
 - Gmail OAuth helpers for a later send/read phase
 - Hunter.io and Playwright for contact enrichment
-- Apify in a later sourcing phase
+- RapidAPI Instagram Scraper Stable API for competitor reverse-lookup
 
 ## Setup
 
@@ -35,6 +35,7 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    SUPABASE_SERVICE_ROLE_KEY=
    ANTHROPIC_API_KEY=
    HUNTER_API_KEY=
+   RAPIDAPI_KEY=
    ```
 
    Optional but recommended for Phase 1c:
@@ -46,8 +47,10 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/api/gmail/callback
    GMAIL_TOKEN_ENCRYPTION_KEY=
    HUNTER_RATE_LIMIT_PER_MINUTE=10
+   RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
+   RAPIDAPI_INSTAGRAM_RATE_LIMIT_PER_MINUTE=30
    SUPABASE_URL=
-   WORKER_KIND=page_scrape
+   WORKER_KIND=page_scrape,instagram_scrape
    ```
 
    Generate the Gmail encryption key with:
@@ -116,9 +119,21 @@ HUNTER_RATE_LIMIT_PER_MINUTE=10
 
 The free Hunter tier is 25 searches per month, which is enough for development smoke tests but not enough for production enrichment. Mira also keeps a conservative per-process rate limiter around all Hunter calls.
 
+## RapidAPI Instagram Setup
+
+Mira uses Athena's RapidAPI subscription for Instagram competitor reverse-lookup:
+
+```bash
+RAPIDAPI_KEY=
+RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
+RAPIDAPI_INSTAGRAM_RATE_LIMIT_PER_MINUTE=30
+```
+
+The integration targets RockSolid APIs' Instagram Scraper Stable API, using the `User Posts` endpoint (`POST /get_ig_user_posts.php`) to fetch a competitor handle's recent posts. Tests use mocks and do not spend RapidAPI quota.
+
 ## Background Worker
 
-The background worker lives in `workers/` and is designed for Railway. Phase 2c uses it for `page_scrape` jobs: Playwright checks brand contact/press/partnership pages, respects `robots.txt`, and writes discovered emails into `brand_contacts`.
+The background worker lives in `workers/` and is designed for Railway. It can process multiple job kinds in one process. `page_scrape` jobs use Playwright to check brand contact/press/partnership pages, and `instagram_scrape` jobs use RapidAPI to find brands tagged by competitor creators.
 
 Install local worker dependencies and Chromium:
 
@@ -138,11 +153,11 @@ Required worker env vars:
 ```bash
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape
+WORKER_KIND=page_scrape,instagram_scrape
 WORKER_ID=
 ```
 
-`SUPABASE_URL` can be the same value as `NEXT_PUBLIC_SUPABASE_URL`. See `workers/README.md` for Railway deployment, scaling, and stuck-job debugging.
+Use `WORKER_KIND=page_scrape,instagram_scrape` or `WORKER_KIND=all` to run both in one Railway worker. `SUPABASE_URL` can be the same value as `NEXT_PUBLIC_SUPABASE_URL`. See `workers/README.md` for Railway deployment, scaling, and stuck-job debugging.
 
 ## Seed Athena's Profiles
 
@@ -209,9 +224,12 @@ pnpm test:contact-enrichment
 pnpm test:bulk-enrichment
 pnpm test:jobs-queue
 pnpm test:page-scrape-mapping
+pnpm test:fuzzy-matching
+pnpm test:brand-extraction
+pnpm test:instagram-job-mock
 ```
 
-`pnpm test:brand-identity` checks deterministic identity key normalization and merge promotion. `pnpm test:csv-import` imports a fixture CSV with valid and invalid rows, then verifies source signals and unique identity keys. The Hunter/contact tests use mocked Hunter responses, so they do not spend Hunter quota. The jobs queue test exercises enqueue, atomic claim, complete, and retry/fail behavior. The page-scrape mapping test stays browser-free and checks email/context role detection.
+`pnpm test:brand-identity` checks deterministic identity key normalization and merge promotion. `pnpm test:csv-import` imports a fixture CSV with valid and invalid rows, then verifies source signals and unique identity keys. The Hunter/contact tests use mocked Hunter responses, so they do not spend Hunter quota. The jobs queue test exercises enqueue, atomic claim, complete, and retry/fail behavior. The page-scrape mapping test stays browser-free and checks email/context role detection. The Phase 2d tests cover fuzzy proposals, Instagram brand extraction, and the mocked Instagram worker path.
 
 ## Useful Commands
 

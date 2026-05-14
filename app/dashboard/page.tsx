@@ -253,6 +253,9 @@ export default async function DashboardPage() {
               Brands with contacts: {data.brandSummary.brandsWithContacts} /{" "}
               {data.brandSummary.total}
             </p>
+            <p className="text-sm text-muted-foreground">
+              Match proposals: {data.brandSummary.openMatchProposals}
+            </p>
             {data.brandSummary.topCategories.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {data.brandSummary.topCategories.map((category) => (
@@ -265,6 +268,11 @@ export default async function DashboardPage() {
             <Button asChild className="w-fit" variant="outline">
               <a href="/brands">Open brand pool</a>
             </Button>
+            {data.brandSummary.openMatchProposals > 0 ? (
+              <Button asChild className="w-fit" variant="outline">
+                <a href="/brands/proposals">Review match proposals</a>
+              </Button>
+            ) : null}
           </CardContent>
         </Card>
 

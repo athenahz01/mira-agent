@@ -76,6 +76,59 @@ export type Database = {
           },
         ]
       }
+      brand_match_proposals: {
+        Row: {
+          candidate_brand_ids: string[]
+          candidate_scores: number[]
+          created_at: string
+          id: string
+          incoming_payload_json: Json
+          resolved_at: string | null
+          resolved_brand_id: string | null
+          resolved_by: string | null
+          source: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          candidate_brand_ids: string[]
+          candidate_scores: number[]
+          created_at?: string
+          id?: string
+          incoming_payload_json: Json
+          resolved_at?: string | null
+          resolved_brand_id?: string | null
+          resolved_by?: string | null
+          source: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          candidate_brand_ids?: string[]
+          candidate_scores?: number[]
+          created_at?: string
+          id?: string
+          incoming_payload_json?: Json
+          resolved_at?: string | null
+          resolved_brand_id?: string | null
+          resolved_by?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_match_proposals_resolved_brand_id_fkey"
+            columns: ["resolved_brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brands: {
         Row: {
           aesthetic_tags: string[]
@@ -232,6 +285,50 @@ export type Database = {
             columns: ["target_contact_id"]
             isOneToOne: false
             referencedRelation: "brand_contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      competitor_handles: {
+        Row: {
+          created_at: string
+          creator_profile_id: string
+          handle: string
+          id: string
+          last_scraped_at: string | null
+          notes: string | null
+          platform: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          creator_profile_id: string
+          handle: string
+          id?: string
+          last_scraped_at?: string | null
+          notes?: string | null
+          platform?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          creator_profile_id?: string
+          handle?: string
+          id?: string
+          last_scraped_at?: string | null
+          notes?: string | null
+          platform?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "competitor_handles_creator_profile_id_fkey"
+            columns: ["creator_profile_id"]
+            isOneToOne: false
+            referencedRelation: "creator_profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1222,6 +1319,19 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      fuzzy_match_brands: {
+        Args: {
+          p_domain: string
+          p_min_score: number
+          p_name: string
+          p_user_id: string
+        }
+        Returns: {
+          brand_id: string
+          matched_field: string
+          score: number
+        }[]
+      }
       resolve_child_user_id: {
         Args: {
           expected_user_id: string
@@ -1230,6 +1340,8 @@ export type Database = {
         }
         Returns: string
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       [_ in never]: never

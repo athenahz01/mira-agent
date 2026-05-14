@@ -225,6 +225,11 @@ async function seedExampleBrands() {
 
   for (const brand of exampleBrands) {
     const result = await findOrCreateBrand(context, brand);
+
+    if (!result.brand) {
+      throw new Error(`Seed brand queued for review: ${brand.name}`);
+    }
+
     await insertSourceSignal(context, {
       brandId: result.brand.id,
       signalType: "manual_seed",
