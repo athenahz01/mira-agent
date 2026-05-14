@@ -27,6 +27,8 @@
     "test:fuzzy-matching": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-fuzzy-matching.ts",
     "test:brand-extraction": "node --experimental-strip-types scripts/test-brand-extraction.ts",
     "test:instagram-job-mock": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-instagram-job-mock.ts",
+    "test:scoring-rules": "node --experimental-strip-types scripts/test-scoring-rules.ts",
+    "test:scoring-service": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-scoring-service.ts",
     "worker:dev": "node --env-file-if-exists=.env.local --experimental-strip-types workers/dev.ts"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import type { Tables } from "@/lib/db/types";
+import type { Tables } from "../db/types";
 
 export const DEAL_TYPES = [
   "paid",

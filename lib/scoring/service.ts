@@ -1,14 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { brandFiltersSchema, type BrandFilters } from "@/lib/brands/schemas";
-import type { Database, Json, Tables, TablesInsert } from "@/lib/db/types";
+import { brandFiltersSchema, type BrandFilters } from "../brands/schemas.ts";
+import type { Database, Json, Tables, TablesInsert } from "../db/types";
 import {
   DEAL_TYPES,
   scoreBrand,
   type DealType,
   type ScoringBrand,
   type ScoringCreatorProfile,
-} from "@/lib/scoring/rules";
+} from "./rules.ts";
 
 export const SCORE_CACHE_DAYS = 7;
 export const RANKED_BRAND_PAGE_SIZE = 25;
