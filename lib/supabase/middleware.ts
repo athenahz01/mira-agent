@@ -1,4 +1,5 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { type NextRequest, NextResponse } from "next/server";
 
 import type { Database } from "@/lib/db/types";
@@ -14,6 +15,7 @@ export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isAuthRoute = pathname === "/login" || pathname === "/signup";
   const isApiRoute = pathname.startsWith("/api/");
+  const isOnboardingRoute = pathname === "/onboarding";
 
   if (!hasSupabasePublicEnv()) {
     if (!isAuthRoute && !isApiRoute) {
@@ -52,16 +54,50 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const onboardingCompletedAt = user
+    ? await getOnboardingCompletedAt(
+        supabase as unknown as SupabaseClient<Database>,
+        user.id,
+      )
+    : null;
+  const hasCompletedOnboarding = Boolean(onboardingCompletedAt);
 
   if (user && isAuthRoute) {
-    return redirectWithCookies(request, response, "/dashboard");
+    return redirectWithCookies(
+      request,
+      response,
+      hasCompletedOnboarding ? "/dashboard" : "/onboarding",
+    );
   }
 
   if (!user && !isAuthRoute && !isApiRoute) {
     return redirectWithCookies(request, response, "/login");
   }
 
+  if (
+    user &&
+    !hasCompletedOnboarding &&
+    !isAuthRoute &&
+    !isApiRoute &&
+    !isOnboardingRoute
+  ) {
+    return redirectWithCookies(request, response, "/onboarding");
+  }
+
   return response;
+}
+
+async function getOnboardingCompletedAt(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+) {
+  const { data } = await supabase
+    .from("users")
+    .select("onboarding_completed_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  return data?.onboarding_completed_at ?? null;
 }
 
 function redirectWithCookies(

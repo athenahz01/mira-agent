@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { loginSchema, signupSchema } from "@/lib/auth/schemas";
+import { defaultSenderDisplayName } from "@/lib/onboarding/defaults";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthActionResult =
@@ -88,6 +89,7 @@ export async function signUpWithPassword(
     email: data.user.email ?? email,
     name,
     timezone: "America/New_York",
+    sender_display_name: defaultSenderDisplayName,
   });
 
   if (profileError) {
@@ -97,7 +99,7 @@ export async function signUpWithPassword(
     };
   }
 
-  redirect("/dashboard");
+  redirect("/onboarding");
 }
 
 export async function signOut(): Promise<void> {

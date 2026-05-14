@@ -1,4 +1,5 @@
 import { signOut } from "@/app/actions/auth";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -11,8 +12,16 @@ import type { Database } from "@/lib/db/types";
 import { createClient } from "@/lib/supabase/server";
 
 type AppUser = Database["public"]["Tables"]["users"]["Row"];
+type CreatorProfile = Database["public"]["Tables"]["creator_profiles"]["Row"];
+type VoiceGuide = Database["public"]["Tables"]["voice_style_guides"]["Row"];
 
-async function getDashboardName() {
+type DashboardData = {
+  name: string;
+  profiles: CreatorProfile[];
+  activeGuidesByProfileId: Record<string, VoiceGuide>;
+};
+
+async function getDashboardData(): Promise<DashboardData | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -22,24 +31,46 @@ async function getDashboardName() {
     return null;
   }
 
-  const profileResult = await supabase
-    .from("users")
-    .select("*")
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const [profileResult, creatorProfilesResult, guidesResult] =
+    await Promise.all([
+      supabase
+        .from("users")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      supabase
+        .from("creator_profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("handle"),
+      supabase
+        .from("voice_style_guides")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("is_active", true),
+    ]);
   const profile = profileResult.data as AppUser | null;
   const metadataName =
     typeof user.user_metadata.name === "string"
       ? user.user_metadata.name
       : null;
+  const activeGuidesByProfileId: Record<string, VoiceGuide> = {};
 
-  return profile?.name ?? metadataName ?? user.email ?? "Athena";
+  for (const guide of guidesResult.data ?? []) {
+    activeGuidesByProfileId[guide.creator_profile_id] = guide;
+  }
+
+  return {
+    name: profile?.name ?? metadataName ?? user.email ?? "Athena",
+    profiles: creatorProfilesResult.data ?? [],
+    activeGuidesByProfileId,
+  };
 }
 
 export default async function DashboardPage() {
-  const name = await getDashboardName();
+  const data = await getDashboardData();
 
-  if (!name) {
+  if (!data) {
     return null;
   }
 
@@ -49,7 +80,7 @@ export default async function DashboardPage() {
         <div>
           <p className="text-sm font-medium text-muted-foreground">Mira</p>
           <h1 className="mt-2 text-3xl font-semibold tracking-normal">
-            Welcome, {name}
+            Welcome, {data.name}
           </h1>
         </div>
 
@@ -69,6 +100,46 @@ export default async function DashboardPage() {
                 Sign out
               </Button>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Voice Guides</CardTitle>
+            <CardDescription>
+              Mira uses these when she writes sponsorship outreach.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            {data.profiles.map((profile) => {
+              const guide = data.activeGuidesByProfileId[profile.id];
+
+              return (
+                <div
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-md border px-3 py-3"
+                  key={profile.id}
+                >
+                  <div>
+                    <p className="font-medium">@{profile.handle}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {profile.display_name}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {guide ? (
+                      <Badge>v{guide.version} active</Badge>
+                    ) : (
+                      <Badge variant="outline">No guide</Badge>
+                    )}
+                    <Button asChild size="sm" variant="outline">
+                      <a href={`/onboarding?step=voice&profile=${profile.id}`}>
+                        Edit voice
+                      </a>
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       </section>
