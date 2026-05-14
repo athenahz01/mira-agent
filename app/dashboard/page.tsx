@@ -8,29 +8,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { Database } from "@/lib/db/types";
-import { hasSupabasePublicEnv } from "@/lib/supabase/env";
 import { createClient } from "@/lib/supabase/server";
 
 type AppUser = Database["public"]["Tables"]["users"]["Row"];
 
 async function getDashboardName() {
-  if (!hasSupabasePublicEnv()) {
-    return {
-      name: "Athena",
-      isSignedIn: false,
-    };
-  }
-
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return {
-      name: "Athena",
-      isSignedIn: false,
-    };
+    return null;
   }
 
   const profileResult = await supabase
@@ -40,16 +29,19 @@ async function getDashboardName() {
     .maybeSingle();
   const profile = profileResult.data as AppUser | null;
   const metadataName =
-    typeof user.user_metadata.name === "string" ? user.user_metadata.name : null;
+    typeof user.user_metadata.name === "string"
+      ? user.user_metadata.name
+      : null;
 
-  return {
-    name: profile?.name ?? metadataName ?? user.email ?? "Athena",
-    isSignedIn: true,
-  };
+  return profile?.name ?? metadataName ?? user.email ?? "Athena";
 }
 
 export default async function DashboardPage() {
-  const { name, isSignedIn } = await getDashboardName();
+  const name = await getDashboardName();
+
+  if (!name) {
+    return null;
+  }
 
   return (
     <main className="min-h-screen bg-muted/30 px-6 py-10">
@@ -72,13 +64,11 @@ export default async function DashboardPage() {
             <p className="text-sm text-muted-foreground">
               Product workflows start in the next phase.
             </p>
-            {isSignedIn ? (
-              <form action={signOut}>
-                <Button type="submit" variant="outline">
-                  Sign out
-                </Button>
-              </form>
-            ) : null}
+            <form action={signOut}>
+              <Button type="submit" variant="outline">
+                Sign out
+              </Button>
+            </form>
           </CardContent>
         </Card>
       </section>

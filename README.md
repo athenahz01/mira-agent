@@ -38,7 +38,7 @@ Mira is Athena Huo's personal cold-outreach agent for brand sponsorships, giftin
    pnpm dev
    ```
 
-5. Open [http://localhost:3000](http://localhost:3000). Phase 1a intentionally goes straight to `/dashboard`; visible login and signup screens are deferred because Athena asked to bypass them for now.
+5. Open [http://localhost:3000](http://localhost:3000). Sign up at `/signup`, then you'll land on `/dashboard`.
 
 ## Supabase
 
