@@ -100,11 +100,11 @@ async function createUser() {
 
 async function seedBrands(userId: string) {
   const rows = [
+    { name: "No Domain One", domain: null },
+    { name: "No Domain Two", domain: null },
     { name: "Brand One", domain: "one.example" },
     { name: "Brand Two", domain: "two.example" },
     { name: "Brand Three", domain: "three.example" },
-    { name: "No Domain One", domain: null },
-    { name: "No Domain Two", domain: null },
   ].map((brand) => ({
     user_id: userId,
     name: brand.name,
@@ -141,12 +141,12 @@ async function main() {
     hunterClient: fakeHunter,
   };
   const result = await enrichUnenrichedBrandsForUser(context, {
-    limit: 25,
+    limit: 3,
   });
 
   assert(result.processed === 3, `Expected 3 processed, got ${result.processed}.`);
   assert(result.succeeded === 3, `Expected 3 succeeded, got ${result.succeeded}.`);
-  assert(result.skipped === 2, `Expected 2 skipped, got ${result.skipped}.`);
+  assert(result.skipped === 0, `Expected 0 skipped, got ${result.skipped}.`);
 
   const { data: contacts, error } = await service
     .from("brand_contacts")

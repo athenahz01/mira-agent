@@ -21,7 +21,10 @@
     "test:csv-import": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-csv-import.ts",
     "test:hunter-mapping": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-hunter-mapping.ts",
     "test:contact-enrichment": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-contact-enrichment.ts",
-    "test:bulk-enrichment": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-bulk-enrichment.ts"
+    "test:bulk-enrichment": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-bulk-enrichment.ts",
+    "test:jobs-queue": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-jobs-queue.ts",
+    "test:page-scrape-mapping": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-page-scrape-mapping.ts",
+    "worker:dev": "node --env-file-if-exists=.env.local --experimental-strip-types workers/dev.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
