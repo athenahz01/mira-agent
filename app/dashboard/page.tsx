@@ -8,6 +8,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { BrandPoolSummary } from "@/lib/brands/service";
+import { getBrandPoolSummary } from "@/lib/brands/service";
 import type { Database } from "@/lib/db/types";
 import { createClient } from "@/lib/supabase/server";
 
@@ -21,6 +23,7 @@ type DashboardData = {
   profiles: CreatorProfile[];
   activeGuidesByProfileId: Record<string, VoiceGuide>;
   activeKitsByProfileId: Record<string, MediaKit>;
+  brandSummary: BrandPoolSummary;
 };
 
 async function getDashboardData(): Promise<DashboardData | null> {
@@ -33,29 +36,38 @@ async function getDashboardData(): Promise<DashboardData | null> {
     return null;
   }
 
-  const [profileResult, creatorProfilesResult, guidesResult, kitsResult] =
-    await Promise.all([
-      supabase
-        .from("users")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle(),
-      supabase
-        .from("creator_profiles")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("handle"),
-      supabase
-        .from("voice_style_guides")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("is_active", true),
-      supabase
-        .from("media_kits")
-        .select("*")
-        .eq("user_id", user.id)
-        .eq("is_active", true),
-    ]);
+  const [
+    profileResult,
+    creatorProfilesResult,
+    guidesResult,
+    kitsResult,
+    brandSummary,
+  ] = await Promise.all([
+    supabase
+      .from("users")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    supabase
+      .from("creator_profiles")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("handle"),
+    supabase
+      .from("voice_style_guides")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("is_active", true),
+    supabase
+      .from("media_kits")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("is_active", true),
+    getBrandPoolSummary({
+      supabase,
+      userId: user.id,
+    }),
+  ]);
   const profile = profileResult.data as AppUser | null;
   const metadataName =
     typeof user.user_metadata.name === "string"
@@ -77,6 +89,7 @@ async function getDashboardData(): Promise<DashboardData | null> {
     profiles: creatorProfilesResult.data ?? [],
     activeGuidesByProfileId,
     activeKitsByProfileId,
+    brandSummary,
   };
 }
 
@@ -196,6 +209,49 @@ export default async function DashboardPage() {
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Brand Pool</CardTitle>
+            <CardDescription>
+              Manual seeds and CSV imports for Mira to research later.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.brandSummary.total}
+                </p>
+                <p className="text-sm text-muted-foreground">Total brands</p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.brandSummary.excluded}
+                </p>
+                <p className="text-sm text-muted-foreground">Excluded</p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.brandSummary.topCategories.length}
+                </p>
+                <p className="text-sm text-muted-foreground">Top categories</p>
+              </div>
+            </div>
+            {data.brandSummary.topCategories.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {data.brandSummary.topCategories.map((category) => (
+                  <Badge key={category.category} variant="secondary">
+                    {category.category}: {category.count}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+            <Button asChild className="w-fit" variant="outline">
+              <a href="/brands">Open brand pool</a>
+            </Button>
           </CardContent>
         </Card>
       </section>
