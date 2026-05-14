@@ -46,7 +46,7 @@ export async function processInstagramScrapeJob(
     maxPosts: payload.max_posts,
     maxAgeDays: 90,
   });
-  const excludedCreatorHandles = await loadCreatorHandles(supabase);
+  const excludedCreatorHandles = await loadCreatorHandles(supabase, job.user_id);
   const extraction = extractBrandCandidatesFromInstagramPosts({
     competitorHandle: payload.handle,
     posts,
@@ -111,10 +111,14 @@ export async function processInstagramScrapeJob(
   return result;
 }
 
-async function loadCreatorHandles(supabase: SupabaseClient<Database>) {
+async function loadCreatorHandles(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+) {
   const { data, error } = await supabase
     .from("creator_profiles")
-    .select("handle");
+    .select("handle")
+    .eq("user_id", userId);
 
   if (error) {
     throw new Error(error.message);
