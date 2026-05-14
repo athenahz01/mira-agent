@@ -2,7 +2,7 @@
 
 > Mira is Athena's third named AI agent (after Moana, the chief of staff, and Ingrid, the content strategist). Mira handles brand outreach: sourcing, pitching, follow-ups, and deal tracking.
 > Owner: Athena Huo. Repo: `athenahz01/mira-agent`.
-> Doc version: v0.2 — 2026-05-13. This doc is the source of truth for what gets built.
+> Doc version: v0.3 — 2026-05-13 (Phase 1b/1c split after Phase 1a audit). This doc is the source of truth for what gets built.
 
 ---
 
@@ -567,12 +567,18 @@ Modular, ship pieces as ready (your preference). Each phase produces something u
 - Seed script for the two creator_profiles
 - Minimal authed shell (login → empty /dashboard)
 
-**Phase 1b — Onboarding & voice & Gmail**
+**Phase 1b — Onboarding & voice**
 - Onboarding flow: intake form for each profile
+- Voice samples ingestion (website copy, IG captions, past pitch emails)
 - Voice style guide v1 generation per profile (uses website + IG + manual inputs)
-- First media kit drafts per profile
-- Gmail OAuth connection + token storage
+- Settings UI deferred to Phase 1c
+
+**Phase 1c — Media kit & Gmail OAuth**
+- Media kit data + PDF generation per profile
+- Gmail OAuth connection + refresh token storage in users.gmail_oauth_token_ref
 - Settings UI for outreach_rules and physical address (CAN-SPAM)
+
+(Phases 1b/1c split out of the original combined Phase 1b after the Phase 1a audit, so each phase has a single clear audit checkpoint. Gmail OAuth lives next to media kit because both are integrations that don't unlock real product value until Phase 4 — keeping them together preserves a tight audit surface.)
 
 **Phase 2 — Sourcing engine MVP**
 - Connector A (competitor reverse-lookup via Apify) for both profiles
@@ -616,7 +622,7 @@ Modular, ship pieces as ready (your preference). Each phase produces something u
 
 ## 14. Resolved decisions (as of v0.2)
 
-1. **Sender domain:** `zhengathenahuo@gmail.com`, with Gmail display name set to "Athena Huo." Configured in Phase 1b during Gmail OAuth setup. Subdomain (`collabs@athenahuo.com`) deferred — can migrate later without schema changes.
+1. **Sender domain:** `zhengathenahuo@gmail.com`, with Gmail display name set to "Athena Huo." Configured in Phase 1c during Gmail OAuth setup. Subdomain (`collabs@athenahuo.com`) deferred — can migrate later without schema changes.
 2. **Repo structure:** Single Next.js repo with `/workers` folder for Railway-deployed background jobs. Repo: `athenahz01/mira-agent`.
 3. **`@athena_huo` landing page:** Not part of this project. Hold off.
 4. **Profile architecture:** Two `creator_profile` records under one user, shared brand pool, 90-day cross-pitch cooldown.
@@ -634,4 +640,4 @@ Modular, ship pieces as ready (your preference). Each phase produces something u
 
 ---
 
-*End v0.2. Next revision after Phase 1a audit.*
+*End v0.3. Phase split updated after Phase 1a audit. Next revision after Phase 1b audit.*
