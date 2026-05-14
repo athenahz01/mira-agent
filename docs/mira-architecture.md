@@ -2,7 +2,7 @@
 
 > Mira is Athena's third named AI agent (after Moana, the chief of staff, and Ingrid, the content strategist). Mira handles brand outreach: sourcing, pitching, follow-ups, and deal tracking.
 > Owner: Athena Huo. Repo: `athenahz01/mira-agent`.
-> Doc version: v0.3 — 2026-05-13 (Phase 1b/1c split after Phase 1a audit). This doc is the source of truth for what gets built.
+> Doc version: v0.4 — 2026-05-14 (Phase 2 split into 2a/2b/2c/2d after Phase 1c audit; Section 4.2 split into Wave 1 / Wave 2 to match phasing). This doc is the source of truth for what gets built.
 
 ---
 
@@ -247,12 +247,24 @@ This is the riskiest and most differentiating piece. Designed as a pipeline of p
 
 ### 4.2 Brand identity resolution (dedup)
 
-Same brand comes in from multiple connectors with different name spellings. Resolution logic:
-1. Normalize: lowercase, strip punctuation, strip suffixes ("inc", "co", "the")
-2. Match on `domain` first if present (highest confidence)
-3. Match on `instagram_handle` second
-4. Fuzzy match on `name` + `category` third
-5. Manual review queue for ambiguous matches
+Same brand comes in from multiple sources with different name spellings. Resolution happens in two waves matched to when the input source actually starts producing ambiguity:
+
+**Wave 1 — Deterministic identity keys (Phase 2a, manual + CSV inputs only):**
+1. Normalize: lowercase, strip punctuation, strip whitespace, strip leading @, strip URL prefix/path/trailing slash
+2. Compute `identity_key` from the highest-priority field present (in order: domain → ig_handle → tiktok_handle → name)
+3. Match on exact `identity_key` only — same input string always produces the same key, no fuzzy matching
+4. Stored as a `brands.identity_key` column with a `unique (user_id, identity_key)` constraint
+
+This is sufficient for Phase 2a because manual entry and CSV upload are user-controlled — Athena knows what brand she's adding, so accidental duplicates from spelling variants are rare. When they happen, they collapse to the same key (e.g., "Glossier" + "@glossier" both normalize to a single key per the rules).
+
+**Wave 2 — Fuzzy matching + review queue (Phase 2c, when auto-discovery starts):**
+1. Wave 1 deterministic match first
+2. If no exact match, fuzzy match on normalized name + domain + IG handle (Levenshtein or trigram, threshold ~85%)
+3. If a fuzzy match scores above threshold but below auto-merge confidence, queue for manual review in a "ambiguous matches" UI
+4. Auto-merge above the higher confidence threshold
+5. Track merges in source_signals so we can unwind a bad merge
+
+Why phased: fuzzy matching only earns its complexity when scraped sources start sending ambiguous variants of the same brand. With manual + CSV inputs (Phase 2a–2b), Wave 1 handles 100% of cases. Phase 2c (Apify competitor reverse-lookup) is when fuzzy matching becomes load-bearing.
 
 ### 4.3 Enrichment
 
@@ -580,13 +592,30 @@ Modular, ship pieces as ready (your preference). Each phase produces something u
 
 (Phases 1b/1c split out of the original combined Phase 1b after the Phase 1a audit, so each phase has a single clear audit checkpoint. Gmail OAuth lives next to media kit because both are integrations that don't unlock real product value until Phase 4 — keeping them together preserves a tight audit surface.)
 
-**Phase 2 — Sourcing engine MVP**
-- Connector A (competitor reverse-lookup via Apify) for both profiles
-- Connector D (manual seed + CSV)
-- Enrichment: Hunter + page scraping
-- Brand identity resolution
-- Scoring v1 (rules-based, not ML)
-- Brand pool UI: list, filter, mark interesting
+**Phase 2a — Manual seed + CSV + brand identity resolution (Wave 1) + brand pool listing UI**
+- Connector D (manual seed + CSV upload)
+- Wave 1 deterministic identity keys (see Section 4.2)
+- Basic brand pool UI: list, filter by category/excluded/has-contacts, search, inline edit drawer, exclude with reason
+- Dashboard "Brand Pool" card with counts
+
+**Phase 2b — Brand contact enrichment**
+- Hunter.io email finder (domain → contacts)
+- Playwright scraping of brand /contact, /press, /influencers, /collabs pages
+- brand_contacts UI surfaces
+- Source attribution + confidence scoring per contact
+
+**Phase 2c — Apify competitor reverse-lookup + fuzzy identity (Wave 2)**
+- Connector A (Apify IG scraper for competitor reverse-lookup)
+- Wave 2 fuzzy matching + ambiguous-match review queue (see Section 4.2)
+- Background worker (Railway) for the long-running scrape jobs
+- Auto-create brand rows from scraped sources
+
+**Phase 2d — Scoring engine + scored ranking UI**
+- Per-deal-type rules-based scoring (Section 4.4)
+- Scored ranking + per-deal-type filters in brand pool UI
+- Per-brand card with recommended deal type(s) and score breakdown
+
+(Phase 2 split into 2a/2b/2c/2d after the Phase 1c audit. Each gives a clean audit checkpoint and produces something usable on its own. Original prompts doc had this as a 2a/2b split; further split during planning to keep each phase scoped to one external integration or one new analytical layer.)
 
 **Phase 3 — Drafting**
 - Research brief generation
