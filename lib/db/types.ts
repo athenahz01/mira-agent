@@ -76,6 +76,63 @@ export type Database = {
           },
         ]
       }
+      brand_fit_scores: {
+        Row: {
+          base_fit_score: number
+          brand_id: string
+          computed_at: string
+          created_at: string
+          creator_profile_id: string
+          deal_type: string
+          deal_type_score: number
+          id: string
+          score_rationale_json: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          base_fit_score: number
+          brand_id: string
+          computed_at?: string
+          created_at?: string
+          creator_profile_id: string
+          deal_type: string
+          deal_type_score: number
+          id?: string
+          score_rationale_json: Json
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          base_fit_score?: number
+          brand_id?: string
+          computed_at?: string
+          created_at?: string
+          creator_profile_id?: string
+          deal_type?: string
+          deal_type_score?: number
+          id?: string
+          score_rationale_json?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "brand_fit_scores_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "brand_fit_scores_creator_profile_id_fkey"
+            columns: ["creator_profile_id"]
+            isOneToOne: false
+            referencedRelation: "creator_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brand_match_proposals: {
         Row: {
           candidate_brand_ids: string[]
