@@ -28,6 +28,9 @@ export type RankedBrandRow = {
   score: Tables<"brand_fit_scores">;
   brand: Tables<"brands"> & {
     contact_count: number;
+    contacts: Tables<"brand_contacts">[];
+    has_contacts: boolean;
+    page_scrape_job: null;
   };
   rationale: ScoreRationaleJson;
 };
@@ -196,7 +199,10 @@ export async function listRankedBrandsForUser(
         score,
         brand: {
           ...brand,
+          contacts: contactsByBrand.get(brand.id) ?? [],
           contact_count: contactsByBrand.get(brand.id)?.length ?? 0,
+          has_contacts: (contactsByBrand.get(brand.id)?.length ?? 0) > 0,
+          page_scrape_job: null,
         },
         rationale: readScoreRationale(score.score_rationale_json),
       };

@@ -13,6 +13,8 @@ import { getBrandPoolSummary } from "@/lib/brands/service";
 import type { Database } from "@/lib/db/types";
 import type { JobSummary } from "@/lib/jobs/brand-page-scrape";
 import { getJobSummary } from "@/lib/jobs/brand-page-scrape";
+import type { TopOpportunity } from "@/lib/scoring/service";
+import { getTopOpportunitiesForUser } from "@/lib/scoring/service";
 import { createClient } from "@/lib/supabase/server";
 
 type AppUser = Database["public"]["Tables"]["users"]["Row"];
@@ -27,6 +29,7 @@ type DashboardData = {
   activeKitsByProfileId: Record<string, MediaKit>;
   brandSummary: BrandPoolSummary;
   jobSummary: JobSummary;
+  topOpportunitiesByProfileId: Record<string, TopOpportunity[]>;
 };
 
 async function getDashboardData(): Promise<DashboardData | null> {
@@ -92,13 +95,23 @@ async function getDashboardData(): Promise<DashboardData | null> {
     activeKitsByProfileId[kit.creator_profile_id] = kit;
   }
 
+  const profiles = creatorProfilesResult.data ?? [];
+  const topOpportunitiesByProfileId = await getTopOpportunitiesForUser(
+    {
+      supabase,
+      userId: user.id,
+    },
+    profiles.map((item) => item.id),
+  );
+
   return {
     name: profile?.name ?? metadataName ?? user.email ?? "Athena",
-    profiles: creatorProfilesResult.data ?? [],
+    profiles,
     activeGuidesByProfileId,
     activeKitsByProfileId,
     brandSummary,
     jobSummary,
+    topOpportunitiesByProfileId,
   };
 }
 
@@ -273,6 +286,53 @@ export default async function DashboardPage() {
                 <a href="/brands/proposals">Review match proposals</a>
               </Button>
             ) : null}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Opportunities</CardTitle>
+            <CardDescription>
+              Highest scored brand/deal-type pairs currently in Mira&apos;s pool.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            {data.profiles.map((profile) => {
+              const opportunities =
+                data.topOpportunitiesByProfileId[profile.id] ?? [];
+
+              return (
+                <div className="grid gap-2 rounded-md border p-3" key={profile.id}>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="font-medium">@{profile.handle}</p>
+                    <Button asChild size="sm" variant="outline">
+                      <a href={`/brands?view=paid&profile=${profile.id}`}>
+                        Open
+                      </a>
+                    </Button>
+                  </div>
+                  {opportunities.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No scores yet - click Recompute on /brands.
+                    </p>
+                  ) : (
+                    <div className="grid gap-2">
+                      {opportunities.map((opportunity) => (
+                        <div
+                          className="flex flex-wrap items-center justify-between gap-2 text-sm"
+                          key={`${opportunity.brand_id}-${opportunity.deal_type}`}
+                        >
+                          <span>{opportunity.brand_name}</span>
+                          <span className="text-muted-foreground">
+                            {opportunity.deal_type} · {opportunity.score}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
 

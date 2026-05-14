@@ -23,6 +23,7 @@ import {
   toggleBrandExcluded,
   updateBrand,
 } from "@/app/actions/brands";
+import { computeFitScoresForAllBrands } from "@/app/actions/scoring";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,6 +69,8 @@ import type {
   CompetitorScraperPanelData,
   InstagramScrapeJobSummary,
 } from "@/lib/instagram/competitors";
+import { DEAL_TYPES, type DealType } from "@/lib/scoring/rules";
+import type { RankedBrandListResult, RankedBrandRow } from "@/lib/scoring/service";
 
 type SizeInput =
   | "pre-launch"
@@ -162,9 +165,11 @@ const emptyContactForm: ContactFormState = {
 export function BrandsClient({
   initialList,
   competitorScrapers,
+  rankedList,
 }: {
   initialList: BrandListResult;
   competitorScrapers: CompetitorScraperPanelData;
+  rankedList: RankedBrandListResult | null;
 }) {
   const router = useRouter();
   const [manualForm, setManualForm] = useState<BrandFormState>(emptyBrandForm);
@@ -202,6 +207,7 @@ export function BrandsClient({
   const [isEnriching, startEnriching] = useTransition();
   const [isScraping, startScraping] = useTransition();
   const [isCompetitorPending, startCompetitorTransition] = useTransition();
+  const [isScoring, startScoring] = useTransition();
   const [contactForm, setContactForm] =
     useState<ContactFormState>(emptyContactForm);
   const activeEditingBrand = editingBrand
@@ -561,7 +567,50 @@ export function BrandsClient({
     params.set("sort", nextFilters.sort);
     params.set("direction", nextFilters.direction);
     params.set("page", String(page));
+    if (rankedList) {
+      params.set("view", rankedList.dealType);
+
+      if (rankedList.creatorProfileId) {
+        params.set("profile", rankedList.creatorProfileId);
+      }
+    }
     router.push(`/brands?${params.toString()}`);
+  }
+
+  function switchView(view: "all" | DealType, profileId?: string | null) {
+    const params = new URLSearchParams();
+
+    if (view !== "all") {
+      const nextProfileId =
+        profileId ??
+        rankedList?.creatorProfileId ??
+        competitorScrapers.profiles[0]?.id ??
+        null;
+
+      params.set("view", view);
+
+      if (nextProfileId) {
+        params.set("profile", nextProfileId);
+      }
+    }
+
+    router.push(`/brands?${params.toString()}`);
+  }
+
+  function recomputeScores() {
+    startScoring(async () => {
+      const result = await computeFitScoresForAllBrands();
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success(
+        `${result.data.scores_written} scores written, ${result.data.scores_cached} cached.`,
+      );
+      refreshBrands();
+    });
   }
 
   return (
@@ -732,43 +781,110 @@ export function BrandsClient({
 
         <Card>
           <CardHeader>
-            <CardTitle>Brands</CardTitle>
-            <CardDescription>
-              {initialList.total} matching brand
-              {initialList.total === 1 ? "" : "s"}
-            </CardDescription>
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <CardTitle>
+                  {rankedList ? `Ranked: ${rankedList.dealType}` : "Brands"}
+                </CardTitle>
+                <CardDescription>
+                  {rankedList
+                    ? `${rankedList.total} scored brand${rankedList.total === 1 ? "" : "s"}`
+                    : `${initialList.total} matching brand${
+                        initialList.total === 1 ? "" : "s"
+                      }`}
+                </CardDescription>
+              </div>
+              {rankedList ? (
+                <Button
+                  disabled={isScoring}
+                  onClick={recomputeScores}
+                  type="button"
+                  variant="outline"
+                >
+                  {isScoring ? <Loader2 className="animate-spin" /> : null}
+                  Recompute scores
+                </Button>
+              ) : null}
+            </div>
           </CardHeader>
           <CardContent className="grid gap-5">
+            <RankedTabs
+              activeDealType={rankedList?.dealType ?? null}
+              activeProfileId={rankedList?.creatorProfileId ?? null}
+              profiles={competitorScrapers.profiles}
+              onSwitch={switchView}
+            />
+            {rankedList && competitorScrapers.profiles.length > 0 ? (
+              <Field label="Creator profile">
+                <select
+                  className="h-9 w-fit rounded-md border border-input bg-background px-3 text-sm"
+                  onChange={(event) =>
+                    switchView(rankedList.dealType, event.target.value)
+                  }
+                  value={
+                    rankedList.creatorProfileId ??
+                    competitorScrapers.profiles[0]?.id ??
+                    ""
+                  }
+                >
+                  {competitorScrapers.profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      @{profile.handle}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ) : null}
+            <CardDescription>
+              {rankedList && rankedList.total === 0
+                ? "No scores yet. Click Recompute scores to rank this view."
+                : null}
+            </CardDescription>
             <FiltersBar
               categoryOptions={initialList.categoryOptions}
               filters={filters}
               onApply={(nextFilters) => applyFilters(nextFilters)}
               onChange={setFilters}
             />
-            <BrandTable
-              brands={initialList.brands}
-              direction={initialList.filters.direction}
-              onEdit={openEdit}
-              onSort={(sort) => {
-                const nextDirection: "asc" | "desc" =
-                  filters.sort === sort && filters.direction === "asc"
-                    ? "desc"
-                    : "asc";
-                const nextFilters = {
-                  ...filters,
-                  sort,
-                  direction: nextDirection,
-                };
-                setFilters(nextFilters);
-                applyFilters(nextFilters);
-              }}
-              onToggleExcluded={toggleExcluded}
-              sort={initialList.filters.sort}
-            />
-            <Pagination
-              list={initialList}
-              onPage={(page) => applyFilters(filters, page)}
-            />
+            {rankedList ? (
+              <>
+                <RankedBrandGrid
+                  onEdit={(row) => openEdit(row.brand)}
+                  rows={rankedList.rows}
+                />
+                <RankedPagination
+                  list={rankedList}
+                  onPage={(page) => applyFilters(filters, page)}
+                />
+              </>
+            ) : (
+              <>
+                <BrandTable
+                  brands={initialList.brands}
+                  direction={initialList.filters.direction}
+                  onEdit={openEdit}
+                  onSort={(sort) => {
+                    const nextDirection: "asc" | "desc" =
+                      filters.sort === sort && filters.direction === "asc"
+                        ? "desc"
+                        : "asc";
+                    const nextFilters = {
+                      ...filters,
+                      sort,
+                      direction: nextDirection,
+                    };
+                    setFilters(nextFilters);
+                    applyFilters(nextFilters);
+                  }}
+                  onToggleExcluded={toggleExcluded}
+                  sort={initialList.filters.sort}
+                />
+                <Pagination
+                  list={initialList}
+                  onPage={(page) => applyFilters(filters, page)}
+                />
+              </>
+            )}
           </CardContent>
         </Card>
       </section>
@@ -976,6 +1092,140 @@ function CompetitorScrapersPanel({
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+function RankedTabs({
+  activeDealType,
+  activeProfileId,
+  profiles,
+  onSwitch,
+}: {
+  activeDealType: DealType | null;
+  activeProfileId: string | null;
+  profiles: CompetitorScraperPanelData["profiles"];
+  onSwitch: (view: "all" | DealType, profileId?: string | null) => void;
+}) {
+  const profileId = activeProfileId ?? profiles[0]?.id ?? null;
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        onClick={() => onSwitch("all")}
+        type="button"
+        variant={activeDealType ? "outline" : "default"}
+      >
+        All brands
+      </Button>
+      {DEAL_TYPES.map((dealType) => (
+        <Button
+          key={dealType}
+          onClick={() => onSwitch(dealType, profileId)}
+          type="button"
+          variant={activeDealType === dealType ? "default" : "outline"}
+        >
+          Ranked: {dealType}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
+function RankedBrandGrid({
+  rows,
+  onEdit,
+}: {
+  rows: RankedBrandRow[];
+  onEdit: (row: RankedBrandRow) => void;
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-md border bg-background p-8 text-center text-sm text-muted-foreground">
+        No scored brands match this view.
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      {rows.map((row) => (
+        <Card key={row.score.id}>
+          <CardHeader>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <button
+                className="text-left text-lg font-semibold"
+                onClick={() => onEdit(row)}
+                type="button"
+              >
+                {row.brand.name}
+              </button>
+              <Badge className={scoreBadgeClass(row.score.deal_type_score)}>
+                {row.score.deal_type_score}
+              </Badge>
+            </div>
+            <CardDescription>
+              Base fit {row.score.base_fit_score} · {row.brand.contact_count}{" "}
+              contact{row.brand.contact_count === 1 ? "" : "s"}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="flex flex-wrap gap-2">
+              {row.brand.category.map((category) => (
+                <Badge key={category} variant="secondary">
+                  {category}
+                </Badge>
+              ))}
+            </div>
+            <details className="rounded-md border bg-muted/30 p-3 text-sm">
+              <summary className="cursor-pointer font-medium">Why</summary>
+              <div className="mt-3 grid gap-2 text-muted-foreground">
+                {[...row.rationale.base_rationale, ...row.rationale.deal_type_rationale].map(
+                  (line) => (
+                    <p key={line}>{line}</p>
+                  ),
+                )}
+              </div>
+            </details>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function RankedPagination({
+  list,
+  onPage,
+}: {
+  list: RankedBrandListResult;
+  onPage: (page: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+      <p>
+        Page {list.page} of {list.totalPages}
+      </p>
+      <div className="flex gap-2">
+        <Button
+          disabled={list.page <= 1}
+          onClick={() => onPage(list.page - 1)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Previous
+        </Button>
+        <Button
+          disabled={list.page >= list.totalPages}
+          onClick={() => onPage(list.page + 1)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Next
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -1670,6 +1920,22 @@ function toBrandInput(form: BrandFormState) {
 
 function sortArrow(direction: "asc" | "desc") {
   return direction === "asc" ? "up" : "down";
+}
+
+function scoreBadgeClass(score: number) {
+  if (score >= 80) {
+    return "bg-emerald-600 text-white hover:bg-emerald-600";
+  }
+
+  if (score >= 60) {
+    return "bg-yellow-500 text-black hover:bg-yellow-500";
+  }
+
+  if (score >= 40) {
+    return "bg-amber-600 text-white hover:bg-amber-600";
+  }
+
+  return "bg-muted text-muted-foreground hover:bg-muted";
 }
 
 function contactResultLabel(result: ContactDiscoveryResult) {

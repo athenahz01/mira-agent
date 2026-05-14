@@ -4,6 +4,8 @@ import { BrandsClient } from "@/app/brands/brands-client";
 import { brandFiltersSchema } from "@/lib/brands/schemas";
 import { listBrandsForUser } from "@/lib/brands/service";
 import { listCompetitorScrapersForUser } from "@/lib/instagram/competitors";
+import { DEAL_TYPES, type DealType } from "@/lib/scoring/rules";
+import { listRankedBrandsForUser } from "@/lib/scoring/service";
 import { createClient } from "@/lib/supabase/server";
 
 type BrandsPageProps = {
@@ -30,19 +32,29 @@ export default async function BrandsPage({ searchParams }: BrandsPageProps) {
     sort: valueOf(searchParams?.sort) ?? "created_at",
     direction: valueOf(searchParams?.direction) ?? "desc",
   });
+  const rankedDealType = readDealType(valueOf(searchParams?.view));
+  const rankedProfileId = valueOf(searchParams?.profile) || null;
   const context = {
     supabase,
     userId: user.id,
   };
-  const [brandList, competitorScrapers] = await Promise.all([
+  const [brandList, competitorScrapers, rankedList] = await Promise.all([
     listBrandsForUser(context, filters),
     listCompetitorScrapersForUser(context),
+    rankedDealType
+      ? listRankedBrandsForUser(context, {
+          creatorProfileId: rankedProfileId,
+          dealType: rankedDealType,
+          filters,
+        })
+      : Promise.resolve(null),
   ]);
 
   return (
     <BrandsClient
       competitorScrapers={competitorScrapers}
       initialList={brandList}
+      rankedList={rankedList}
     />
   );
 }
@@ -57,4 +69,8 @@ function valuesOf(value: string | string[] | undefined) {
   }
 
   return Array.isArray(value) ? value : [value];
+}
+
+function readDealType(value: string | undefined): DealType | null {
+  return DEAL_TYPES.includes(value as DealType) ? (value as DealType) : null;
 }
