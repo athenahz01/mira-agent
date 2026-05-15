@@ -30,6 +30,14 @@ type DraftingSummary = {
   latestAutoDraftJob: Job | null;
 };
 
+type SendPipelineSummary = {
+  scheduledCount: number;
+  nextScheduledAt: string | null;
+  sentToday: number;
+  sentThisWeek: number;
+  failedLast7Days: number;
+};
+
 type DashboardData = {
   name: string;
   profiles: CreatorProfile[];
@@ -39,6 +47,7 @@ type DashboardData = {
   jobSummary: JobSummary;
   topOpportunitiesByProfileId: Record<string, TopOpportunity[]>;
   draftingSummary: DraftingSummary;
+  sendPipelineSummary: SendPipelineSummary;
 };
 
 async function getDashboardData(): Promise<DashboardData | null> {
@@ -59,6 +68,7 @@ async function getDashboardData(): Promise<DashboardData | null> {
     brandSummary,
     jobSummary,
     draftingSummary,
+    sendPipelineSummary,
   ] = await Promise.all([
     supabase
       .from("users")
@@ -89,6 +99,10 @@ async function getDashboardData(): Promise<DashboardData | null> {
       userId: user.id,
     }),
     getDraftingSummary({
+      supabase,
+      userId: user.id,
+    }),
+    getSendPipelineSummary({
       supabase,
       userId: user.id,
     }),
@@ -127,6 +141,7 @@ async function getDashboardData(): Promise<DashboardData | null> {
     jobSummary,
     topOpportunitiesByProfileId,
     draftingSummary,
+    sendPipelineSummary,
   };
 }
 
@@ -190,6 +205,76 @@ async function getDraftingSummary(context: {
     approvedToday: approvedTodayResult.count ?? 0,
     approvedThisWeek: approvedWeekResult.count ?? 0,
     latestAutoDraftJob: latestJobResult.data?.[0] ?? null,
+  };
+}
+
+async function getSendPipelineSummary(context: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+}): Promise<SendPipelineSummary> {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const [
+    scheduledResult,
+    nextScheduledResult,
+    sentTodayResult,
+    sentWeekResult,
+    failedResult,
+  ] = await Promise.all([
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("status", "approved")
+      .is("sent_at", null),
+    context.supabase
+      .from("messages")
+      .select("scheduled_send_at")
+      .eq("user_id", context.userId)
+      .eq("status", "approved")
+      .is("sent_at", null)
+      .not("scheduled_send_at", "is", null)
+      .order("scheduled_send_at", { ascending: true })
+      .limit(1),
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("status", "sent")
+      .gte("sent_at", startOfToday.toISOString()),
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("status", "sent")
+      .gte("sent_at", startOfWeek.toISOString()),
+    context.supabase
+      .from("send_events")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("event_type", "failed")
+      .gte("created_at", startOfWeek.toISOString()),
+  ]);
+
+  for (const result of [
+    scheduledResult,
+    nextScheduledResult,
+    sentTodayResult,
+    sentWeekResult,
+    failedResult,
+  ]) {
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
+  }
+
+  return {
+    scheduledCount: scheduledResult.count ?? 0,
+    nextScheduledAt: nextScheduledResult.data?.[0]?.scheduled_send_at ?? null,
+    sentToday: sentTodayResult.count ?? 0,
+    sentThisWeek: sentWeekResult.count ?? 0,
+    failedLast7Days: failedResult.count ?? 0,
   };
 }
 
@@ -478,6 +563,58 @@ export default async function DashboardPage() {
             )}
             <Button asChild className="w-fit" variant="outline">
               <a href="/approvals">Open approval queue</a>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Send Pipeline</CardTitle>
+            <CardDescription>
+              Approved pitches waiting on Gmail and recent outbound health.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.draftingSummary.pendingApprovals}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Pending approvals
+                </p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.sendPipelineSummary.scheduledCount}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Scheduled to send
+                </p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.sendPipelineSummary.failedLast7Days}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Failed, last 7 days
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Next scheduled:{" "}
+              {data.sendPipelineSummary.nextScheduledAt
+                ? new Date(
+                    data.sendPipelineSummary.nextScheduledAt,
+                  ).toLocaleString()
+                : "none"}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Sent today: {data.sendPipelineSummary.sentToday} - sent this week:{" "}
+              {data.sendPipelineSummary.sentThisWeek}
+            </p>
+            <Button asChild className="w-fit" variant="outline">
+              <a href="/sends">Open send queue</a>
             </Button>
           </CardContent>
         </Card>
