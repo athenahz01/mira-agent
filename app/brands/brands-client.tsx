@@ -23,6 +23,7 @@ import {
   toggleBrandExcluded,
   updateBrand,
 } from "@/app/actions/brands";
+import { draftBrandManually } from "@/app/actions/drafting";
 import { computeFitScoresForAllBrands } from "@/app/actions/scoring";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -208,6 +209,7 @@ export function BrandsClient({
   const [isScraping, startScraping] = useTransition();
   const [isCompetitorPending, startCompetitorTransition] = useTransition();
   const [isScoring, startScoring] = useTransition();
+  const [isDraftingPitch, startDraftingPitch] = useTransition();
   const [contactForm, setContactForm] =
     useState<ContactFormState>(emptyContactForm);
   const activeEditingBrand = editingBrand
@@ -613,6 +615,24 @@ export function BrandsClient({
     });
   }
 
+  function draftRankedPitch(row: RankedBrandRow) {
+    startDraftingPitch(async () => {
+      const result = await draftBrandManually(
+        row.score.creator_profile_id,
+        row.brand.id,
+        row.score.deal_type as DealType,
+      );
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success("Draft created.");
+      router.push(`/approvals?focus=${result.data.message.id}`);
+    });
+  }
+
   return (
     <main className="min-h-screen bg-muted/30 px-6 py-10">
       <section className="mx-auto grid w-full max-w-7xl gap-6">
@@ -849,7 +869,9 @@ export function BrandsClient({
             {rankedList ? (
               <>
                 <RankedBrandGrid
+                  isDrafting={isDraftingPitch}
                   onEdit={(row) => openEdit(row.brand)}
+                  onDraft={draftRankedPitch}
                   rows={rankedList.rows}
                 />
                 <RankedPagination
@@ -1134,9 +1156,13 @@ function RankedTabs({
 function RankedBrandGrid({
   rows,
   onEdit,
+  onDraft,
+  isDrafting,
 }: {
   rows: RankedBrandRow[];
   onEdit: (row: RankedBrandRow) => void;
+  onDraft: (row: RankedBrandRow) => void;
+  isDrafting: boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -1186,6 +1212,14 @@ function RankedBrandGrid({
                 )}
               </div>
             </details>
+            <Button
+              disabled={isDrafting}
+              onClick={() => onDraft(row)}
+              type="button"
+            >
+              {isDrafting ? <Loader2 className="animate-spin" /> : null}
+              Draft this pitch
+            </Button>
           </CardContent>
         </Card>
       ))}
