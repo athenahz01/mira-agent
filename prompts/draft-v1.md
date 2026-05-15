@@ -59,4 +59,3 @@ Email rules:
 - Footer format:
   ---
   {{FOOTER_TEXT}}
-- Do not include Athena's full physical address. Use only the city/state location already provided in FOOTER_TEXT.

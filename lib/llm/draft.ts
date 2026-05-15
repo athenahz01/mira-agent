@@ -13,7 +13,6 @@ import { createAnthropicClient } from "./anthropic.ts";
 
 const defaultSonnetModel = "claude-sonnet-4-5";
 const fallbackSonnetModel = "claude-sonnet-4-20250514";
-const publicFooterLocation = "NYC, NY";
 
 export type DraftInput = {
   creatorProfile: CreatorProfileSummary;
@@ -122,8 +121,6 @@ export async function buildDraftPrompt(input: DraftInput) {
     email: input.senderEmail,
     instagram: normalizeInstagramHandle(input.creatorProfile.handle),
     website: input.mediaKit.contact.website ?? null,
-    footer_location: publicFooterLocation,
-    has_configured_physical_address: input.physicalAddress.trim().length > 0,
   };
   const prompt = template
     .replace(
@@ -231,7 +228,16 @@ function buildFooterText(input: DraftInput) {
     parts.push(input.mediaKit.contact.website);
   }
 
-  parts.push(publicFooterLocation);
+  const address = input.physicalAddress.trim();
+
+  if (!address) {
+    throw new DraftGenerationError(
+      "Missing physical address for CAN-SPAM footer. Set it in /settings.",
+    );
+  }
+
+  parts.push(address);
+  parts.push("reply to be removed from future outreach");
   return parts.join(" | ");
 }
 

@@ -2,7 +2,7 @@ import { defaultVoiceStyleGuide } from "../lib/db/style-guide.ts";
 import type { MediaKitJson } from "../lib/db/media-kit.ts";
 import type { ResearchBriefJson } from "../lib/db/research-brief.ts";
 import { draftJsonSchema } from "../lib/db/draft.ts";
-import { generateDraft } from "../lib/llm/draft.ts";
+import { buildDraftPrompt, generateDraft } from "../lib/llm/draft.ts";
 import type { ScoringBrand } from "../lib/scoring/rules.ts";
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -11,7 +11,7 @@ if (!process.env.ANTHROPIC_API_KEY) {
 }
 
 async function main() {
-  const draft = await generateDraft({
+  const input = {
     creatorProfile: {
       handle: "athena_hz",
       display_name: "Athena Huo",
@@ -28,16 +28,21 @@ async function main() {
     dealType: "paid",
     senderDisplayName: "Athena Huo",
     senderEmail: "zhengathenahuo@gmail.com",
-    physicalAddress: "Configured, hidden from generated footer",
+    physicalAddress: "123 Test Street, New York, NY 10001",
     targetContact: null,
-  });
+  };
+  const { prompt } = await buildDraftPrompt(input);
+  const draft = await generateDraft(input);
 
   draftJsonSchema.parse(draft);
   if (draft.body_text.includes("Mira")) {
     throw new Error("Draft footer/body should not mention Mira.");
   }
-  if (!draft.body_text.includes("NYC, NY")) {
-    throw new Error("Draft footer should include NYC, NY.");
+  if (!prompt.includes("123 Test Street, New York, NY 10001")) {
+    throw new Error("Rendered prompt should include the configured physical address.");
+  }
+  if (!prompt.includes("reply to be removed from future outreach")) {
+    throw new Error("Rendered prompt should include removal language.");
   }
 
   console.log("Draft shape test passed.");
