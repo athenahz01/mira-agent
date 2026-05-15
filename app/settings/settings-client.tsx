@@ -257,6 +257,10 @@ function OutreachRuleCard({
     creator_profile_id: rule.creator_profile_id,
     max_sends_per_day: rule.max_sends_per_day,
     max_drafts_per_day: rule.max_drafts_per_day,
+    follow_up_enabled: rule.follow_up_enabled,
+    follow_up_1_days_after: rule.follow_up_1_days_after,
+    follow_up_2_days_after_initial: rule.follow_up_2_days_after_initial,
+    follow_up_max_count: rule.follow_up_max_count,
     send_mode:
       rule.send_mode === "queued" || rule.send_mode === "immediate"
         ? rule.send_mode
@@ -401,6 +405,56 @@ function OutreachRuleCard({
         <p className="text-sm text-muted-foreground">
           Excluded brand IDs are deferred until the brand pool exists in Phase 2.
         </p>
+        <div className="grid gap-3 rounded-md border p-3">
+          <div>
+            <p className="font-medium">Follow-ups</p>
+            <p className="text-sm text-muted-foreground">
+              Follow-up drafts still go through approval and count toward send
+              caps.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            <NumberField
+              label="Follow-up 1 days after"
+              max={30}
+              min={1}
+              onChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  follow_up_1_days_after: value,
+                }))
+              }
+              value={form.follow_up_1_days_after}
+            />
+            <NumberField
+              label="Follow-up 2 days after initial"
+              max={60}
+              min={1}
+              onChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  follow_up_2_days_after_initial: value,
+                }))
+              }
+              value={form.follow_up_2_days_after_initial}
+            />
+            <NumberField
+              label="Follow-up max count"
+              max={3}
+              onChange={(value) =>
+                setForm((current) => ({ ...current, follow_up_max_count: value }))
+              }
+              value={form.follow_up_max_count}
+            />
+          </div>
+          <Toggle
+            checked={form.follow_up_enabled}
+            label="Follow-ups enabled"
+            onChange={(value) =>
+              setForm((current) => ({ ...current, follow_up_enabled: value }))
+            }
+          />
+        </div>
         <div className="grid gap-3 md:grid-cols-2">
           <Toggle
             checked={form.send_on_weekends}
@@ -466,17 +520,19 @@ function NumberField({
   value,
   onChange,
   max,
+  min = 0,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
   max?: number;
+  min?: number;
 }) {
   return (
     <Field label={label}>
       <Input
         max={max}
-        min={0}
+        min={min}
         onChange={(event) => onChange(Number(event.target.value))}
         type="number"
         value={value}
