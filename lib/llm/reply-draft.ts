@@ -2,42 +2,49 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { draftJsonSchema, type DraftJson } from "../db/draft.ts";
-import type { MediaKitJson } from "../db/media-kit.ts";
-import type { ResearchBriefJson } from "../db/research-brief.ts";
+import type { MediaKitJson } from "../db/media-kit";
+import {
+  replyDraftJsonSchema,
+  type ReplyDraftJson,
+} from "../db/reply-draft.ts";
+import type { ReplyClassificationJson } from "../db/reply-classification.ts";
 import type { VoiceStyleGuideJson } from "../db/style-guide";
 import type { Json, Tables } from "../db/types";
-import type { DealType, ScoringBrand } from "../scoring/rules.ts";
-import type { CreatorProfileSummary } from "./voice-guide";
+import type { NewReply } from "../gmail/inbox.ts";
+import type { ScoringBrand } from "../scoring/rules.ts";
 import { createAnthropicClient } from "./anthropic.ts";
 import { buildOutreachFooterText } from "./footer.ts";
+import type { ThreadMessage } from "./reply-classify.ts";
+import type { CreatorProfileSummary } from "./voice-guide";
 
 const defaultSonnetModel = "claude-sonnet-4-5";
 const fallbackSonnetModel = "claude-sonnet-4-20250514";
 
-export type DraftInput = {
+export type ReplyDraftInput = {
   creatorProfile: CreatorProfileSummary;
   voiceStyleGuide: VoiceStyleGuideJson;
   mediaKit: MediaKitJson;
+  campaign: Tables<"campaigns">;
   brand: ScoringBrand;
-  researchBrief: ResearchBriefJson;
-  dealType: DealType;
+  threadHistory: ThreadMessage[];
+  inboundReply: NewReply;
+  classification: ReplyClassificationJson;
   senderDisplayName: string;
   senderEmail: string;
   physicalAddress: string;
-  targetContact: Tables<"brand_contacts"> | null;
-  angleHint?: string;
 };
 
-export class DraftGenerationError extends Error {
+export class ReplyDraftGenerationError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "DraftGenerationError";
+    this.name = "ReplyDraftGenerationError";
   }
 }
 
-export async function generateDraft(input: DraftInput): Promise<DraftJson> {
-  const { prompt, promptHash } = await buildDraftPrompt(input);
+export async function generateReplyDraft(
+  input: ReplyDraftInput,
+): Promise<ReplyDraftJson> {
+  const { prompt, promptHash } = await buildReplyDraftPrompt(input);
   const preferredModel = process.env.ANTHROPIC_SONNET_MODEL ?? defaultSonnetModel;
 
   try {
@@ -59,9 +66,9 @@ async function generateWithModel(
   prompt: string,
   promptHash: string,
   model: string,
-): Promise<DraftJson> {
+): Promise<ReplyDraftJson> {
   const firstResponse = await requestJson(prompt, model);
-  const firstParsed = parseDraftJson(firstResponse.text, {
+  const firstParsed = parseReplyDraftJson(firstResponse.text, {
     modelUsed: firstResponse.model,
     promptHash,
   });
@@ -76,15 +83,14 @@ Your previous response did not match the schema. Return corrected JSON only.
 
 Schema validation error:
 ${firstParsed.error.message}`;
-
   const secondResponse = await requestJson(retryPrompt, model);
-  const secondParsed = parseDraftJson(secondResponse.text, {
+  const secondParsed = parseReplyDraftJson(secondResponse.text, {
     modelUsed: secondResponse.model,
     promptHash,
   });
 
   if (!secondParsed.success) {
-    throw new DraftGenerationError(secondParsed.error.message);
+    throw new ReplyDraftGenerationError(secondParsed.error.message);
   }
 
   return secondParsed.data;
@@ -94,7 +100,7 @@ async function requestJson(prompt: string, model: string) {
   const anthropic = createAnthropicClient();
   const message = await anthropic.messages.create({
     model,
-    max_tokens: 2600,
+    max_tokens: 1800,
     messages: [
       {
         role: "user",
@@ -113,8 +119,8 @@ async function requestJson(prompt: string, model: string) {
   };
 }
 
-export async function buildDraftPrompt(input: DraftInput) {
-  const promptPath = path.join(process.cwd(), "prompts", "draft-v1.md");
+async function buildReplyDraftPrompt(input: ReplyDraftInput) {
+  const promptPath = path.join(process.cwd(), "prompts", "reply-draft-v1.md");
   const template = await readFile(promptPath, "utf8");
   const footerText = buildOutreachFooterText({
     senderDisplayName: input.senderDisplayName,
@@ -122,12 +128,6 @@ export async function buildDraftPrompt(input: DraftInput) {
     mediaKit: input.mediaKit,
     physicalAddress: input.physicalAddress,
   });
-  const sender = {
-    display_name: input.senderDisplayName,
-    email: input.senderEmail,
-    instagram: normalizeInstagramHandle(input.creatorProfile.handle),
-    website: input.mediaKit.contact.website ?? null,
-  };
   const prompt = template
     .replace(
       "{{CREATOR_PROFILE_JSON}}",
@@ -138,18 +138,27 @@ export async function buildDraftPrompt(input: DraftInput) {
       JSON.stringify(input.voiceStyleGuide, null, 2),
     )
     .replace("{{MEDIA_KIT_JSON}}", JSON.stringify(input.mediaKit, null, 2))
-    .replace("{{BRAND_CONTEXT_JSON}}", JSON.stringify(input.brand, null, 2))
+    .replace("{{CAMPAIGN_JSON}}", JSON.stringify(input.campaign, null, 2))
+    .replace("{{BRAND_JSON}}", JSON.stringify(input.brand, null, 2))
     .replace(
-      "{{RESEARCH_BRIEF_JSON}}",
-      JSON.stringify(input.researchBrief, null, 2),
+      "{{THREAD_HISTORY_JSON}}",
+      JSON.stringify(input.threadHistory, null, 2),
     )
-    .replace("{{DEAL_TYPE}}", input.dealType)
-    .replace("{{SENDER_JSON}}", JSON.stringify(sender, null, 2))
     .replace(
-      "{{TARGET_CONTACT_JSON}}",
-      JSON.stringify(input.targetContact, null, 2),
+      "{{INBOUND_REPLY_JSON}}",
+      JSON.stringify(
+        {
+          ...input.inboundReply,
+          received_at: input.inboundReply.received_at.toISOString(),
+        },
+        null,
+        2,
+      ),
     )
-    .replace("{{ANGLE_HINT}}", input.angleHint?.trim() || "None")
+    .replace(
+      "{{CLASSIFICATION_JSON}}",
+      JSON.stringify(input.classification, null, 2),
+    )
     .replace("{{FOOTER_TEXT}}", footerText);
 
   return {
@@ -158,7 +167,7 @@ export async function buildDraftPrompt(input: DraftInput) {
   };
 }
 
-function parseDraftJson(
+function parseReplyDraftJson(
   rawText: string,
   trace: { modelUsed: string; promptHash: string },
 ) {
@@ -168,24 +177,22 @@ function parseDraftJson(
     return parsedJson;
   }
 
-  const withTrace = {
+  const parsed = replyDraftJsonSchema.safeParse({
     ...parsedJson.data,
-    body_html: null,
     model_used: trace.modelUsed,
     prompt_hash: trace.promptHash,
-  };
-  const parsedDraft = draftJsonSchema.safeParse(withTrace);
+  });
 
-  if (!parsedDraft.success) {
+  if (!parsed.success) {
     return {
       success: false as const,
-      error: parsedDraft.error,
+      error: parsed.error,
     };
   }
 
   return {
     success: true as const,
-    data: parsedDraft.data,
+    data: parsed.data,
   };
 }
 
@@ -202,7 +209,7 @@ function extractJson(rawText: string) {
     if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
       return {
         success: false as const,
-        error: new DraftGenerationError("Anthropic returned no JSON."),
+        error: new ReplyDraftGenerationError("Anthropic returned no JSON."),
       };
     }
 
@@ -220,14 +227,10 @@ function extractJson(rawText: string) {
         error:
           error instanceof Error
             ? error
-            : new DraftGenerationError("Could not parse draft JSON."),
+            : new ReplyDraftGenerationError("Could not parse reply draft JSON."),
       };
     }
   }
-}
-
-function normalizeInstagramHandle(handle: string) {
-  return handle.startsWith("@") ? handle : `@${handle}`;
 }
 
 function isModelNameError(error: unknown) {

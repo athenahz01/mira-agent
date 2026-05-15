@@ -2,42 +2,47 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { draftJsonSchema, type DraftJson } from "../db/draft.ts";
-import type { MediaKitJson } from "../db/media-kit.ts";
-import type { ResearchBriefJson } from "../db/research-brief.ts";
+import {
+  followUpDraftJsonSchema,
+  type FollowUpDraftJson,
+} from "../db/follow-up.ts";
+import type { MediaKitJson } from "../db/media-kit";
+import type { ResearchBriefJson } from "../db/research-brief";
 import type { VoiceStyleGuideJson } from "../db/style-guide";
 import type { Json, Tables } from "../db/types";
-import type { DealType, ScoringBrand } from "../scoring/rules.ts";
-import type { CreatorProfileSummary } from "./voice-guide";
+import type { ScoringBrand } from "../scoring/rules.ts";
 import { createAnthropicClient } from "./anthropic.ts";
 import { buildOutreachFooterText } from "./footer.ts";
+import type { CreatorProfileSummary } from "./voice-guide";
 
 const defaultSonnetModel = "claude-sonnet-4-5";
 const fallbackSonnetModel = "claude-sonnet-4-20250514";
 
-export type DraftInput = {
+export type FollowUpDraftInput = {
   creatorProfile: CreatorProfileSummary;
   voiceStyleGuide: VoiceStyleGuideJson;
   mediaKit: MediaKitJson;
+  campaign: Tables<"campaigns">;
   brand: ScoringBrand;
   researchBrief: ResearchBriefJson;
-  dealType: DealType;
+  originalMessage: { subject: string; body_text: string };
+  followUpNumber: 1 | 2;
+  priorFollowUpTextIfAny: string | null;
   senderDisplayName: string;
-  senderEmail: string;
   physicalAddress: string;
-  targetContact: Tables<"brand_contacts"> | null;
-  angleHint?: string;
 };
 
-export class DraftGenerationError extends Error {
+export class FollowUpGenerationError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = "DraftGenerationError";
+    this.name = "FollowUpGenerationError";
   }
 }
 
-export async function generateDraft(input: DraftInput): Promise<DraftJson> {
-  const { prompt, promptHash } = await buildDraftPrompt(input);
+export async function generateFollowUpDraft(
+  input: FollowUpDraftInput,
+): Promise<FollowUpDraftJson> {
+  const { prompt, promptHash } = await buildFollowUpPrompt(input);
   const preferredModel = process.env.ANTHROPIC_SONNET_MODEL ?? defaultSonnetModel;
 
   try {
@@ -59,9 +64,9 @@ async function generateWithModel(
   prompt: string,
   promptHash: string,
   model: string,
-): Promise<DraftJson> {
+): Promise<FollowUpDraftJson> {
   const firstResponse = await requestJson(prompt, model);
-  const firstParsed = parseDraftJson(firstResponse.text, {
+  const firstParsed = parseFollowUpDraftJson(firstResponse.text, {
     modelUsed: firstResponse.model,
     promptHash,
   });
@@ -76,15 +81,14 @@ Your previous response did not match the schema. Return corrected JSON only.
 
 Schema validation error:
 ${firstParsed.error.message}`;
-
   const secondResponse = await requestJson(retryPrompt, model);
-  const secondParsed = parseDraftJson(secondResponse.text, {
+  const secondParsed = parseFollowUpDraftJson(secondResponse.text, {
     modelUsed: secondResponse.model,
     promptHash,
   });
 
   if (!secondParsed.success) {
-    throw new DraftGenerationError(secondParsed.error.message);
+    throw new FollowUpGenerationError(secondParsed.error.message);
   }
 
   return secondParsed.data;
@@ -94,7 +98,7 @@ async function requestJson(prompt: string, model: string) {
   const anthropic = createAnthropicClient();
   const message = await anthropic.messages.create({
     model,
-    max_tokens: 2600,
+    max_tokens: 1800,
     messages: [
       {
         role: "user",
@@ -113,8 +117,8 @@ async function requestJson(prompt: string, model: string) {
   };
 }
 
-export async function buildDraftPrompt(input: DraftInput) {
-  const promptPath = path.join(process.cwd(), "prompts", "draft-v1.md");
+async function buildFollowUpPrompt(input: FollowUpDraftInput) {
+  const promptPath = path.join(process.cwd(), "prompts", "follow-up-v1.md");
   const template = await readFile(promptPath, "utf8");
   const footerText = buildOutreachFooterText({
     senderDisplayName: input.senderDisplayName,
@@ -122,13 +126,8 @@ export async function buildDraftPrompt(input: DraftInput) {
     mediaKit: input.mediaKit,
     physicalAddress: input.physicalAddress,
   });
-  const sender = {
-    display_name: input.senderDisplayName,
-    email: input.senderEmail,
-    instagram: normalizeInstagramHandle(input.creatorProfile.handle),
-    website: input.mediaKit.contact.website ?? null,
-  };
   const prompt = template
+    .replace("{{FOLLOW_UP_NUMBER}}", String(input.followUpNumber))
     .replace(
       "{{CREATOR_PROFILE_JSON}}",
       JSON.stringify(input.creatorProfile, null, 2),
@@ -138,18 +137,17 @@ export async function buildDraftPrompt(input: DraftInput) {
       JSON.stringify(input.voiceStyleGuide, null, 2),
     )
     .replace("{{MEDIA_KIT_JSON}}", JSON.stringify(input.mediaKit, null, 2))
-    .replace("{{BRAND_CONTEXT_JSON}}", JSON.stringify(input.brand, null, 2))
+    .replace("{{CAMPAIGN_JSON}}", JSON.stringify(input.campaign, null, 2))
+    .replace("{{BRAND_JSON}}", JSON.stringify(input.brand, null, 2))
     .replace(
       "{{RESEARCH_BRIEF_JSON}}",
       JSON.stringify(input.researchBrief, null, 2),
     )
-    .replace("{{DEAL_TYPE}}", input.dealType)
-    .replace("{{SENDER_JSON}}", JSON.stringify(sender, null, 2))
     .replace(
-      "{{TARGET_CONTACT_JSON}}",
-      JSON.stringify(input.targetContact, null, 2),
+      "{{ORIGINAL_MESSAGE_JSON}}",
+      JSON.stringify(input.originalMessage, null, 2),
     )
-    .replace("{{ANGLE_HINT}}", input.angleHint?.trim() || "None")
+    .replace("{{PRIOR_FOLLOW_UP_TEXT}}", input.priorFollowUpTextIfAny ?? "None")
     .replace("{{FOOTER_TEXT}}", footerText);
 
   return {
@@ -158,7 +156,7 @@ export async function buildDraftPrompt(input: DraftInput) {
   };
 }
 
-function parseDraftJson(
+function parseFollowUpDraftJson(
   rawText: string,
   trace: { modelUsed: string; promptHash: string },
 ) {
@@ -168,24 +166,22 @@ function parseDraftJson(
     return parsedJson;
   }
 
-  const withTrace = {
+  const parsed = followUpDraftJsonSchema.safeParse({
     ...parsedJson.data,
-    body_html: null,
     model_used: trace.modelUsed,
     prompt_hash: trace.promptHash,
-  };
-  const parsedDraft = draftJsonSchema.safeParse(withTrace);
+  });
 
-  if (!parsedDraft.success) {
+  if (!parsed.success) {
     return {
       success: false as const,
-      error: parsedDraft.error,
+      error: parsed.error,
     };
   }
 
   return {
     success: true as const,
-    data: parsedDraft.data,
+    data: parsed.data,
   };
 }
 
@@ -202,7 +198,7 @@ function extractJson(rawText: string) {
     if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
       return {
         success: false as const,
-        error: new DraftGenerationError("Anthropic returned no JSON."),
+        error: new FollowUpGenerationError("Anthropic returned no JSON."),
       };
     }
 
@@ -220,14 +216,10 @@ function extractJson(rawText: string) {
         error:
           error instanceof Error
             ? error
-            : new DraftGenerationError("Could not parse draft JSON."),
+            : new FollowUpGenerationError("Could not parse follow-up JSON."),
       };
     }
   }
-}
-
-function normalizeInstagramHandle(handle: string) {
-  return handle.startsWith("@") ? handle : `@${handle}`;
 }
 
 function isModelNameError(error: unknown) {
