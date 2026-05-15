@@ -923,10 +923,14 @@ export type Database = {
           kind: string
           model_used: string | null
           prompt_hash: string | null
+          scheduled_send_at: string | null
+          send_attempts: number
+          send_error: string | null
           sent_at: string | null
           status: string
           subject: string
           subject_variants: string[]
+          undo_until: string | null
           updated_at: string
           user_id: string
           version: number
@@ -946,10 +950,14 @@ export type Database = {
           kind: string
           model_used?: string | null
           prompt_hash?: string | null
+          scheduled_send_at?: string | null
+          send_attempts?: number
+          send_error?: string | null
           sent_at?: string | null
           status?: string
           subject: string
           subject_variants?: string[]
+          undo_until?: string | null
           updated_at?: string
           user_id: string
           version: number
@@ -969,10 +977,14 @@ export type Database = {
           kind?: string
           model_used?: string | null
           prompt_hash?: string | null
+          scheduled_send_at?: string | null
+          send_attempts?: number
+          send_error?: string | null
           sent_at?: string | null
           status?: string
           subject?: string
           subject_variants?: string[]
+          undo_until?: string | null
           updated_at?: string
           user_id?: string
           version?: number
@@ -1034,6 +1046,7 @@ export type Database = {
           max_sends_per_day: number
           min_minutes_between_sends: number
           require_per_email_approval: boolean
+          send_mode: string
           send_on_weekends: boolean
           send_timezone: string
           send_window_end_hour: number
@@ -1055,6 +1068,7 @@ export type Database = {
           max_sends_per_day?: number
           min_minutes_between_sends?: number
           require_per_email_approval?: boolean
+          send_mode?: string
           send_on_weekends?: boolean
           send_timezone?: string
           send_window_end_hour?: number
@@ -1076,6 +1090,7 @@ export type Database = {
           max_sends_per_day?: number
           min_minutes_between_sends?: number
           require_per_email_approval?: boolean
+          send_mode?: string
           send_on_weekends?: boolean
           send_timezone?: string
           send_window_end_hour?: number
@@ -1226,6 +1241,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "reply_classifications_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      send_events: {
+        Row: {
+          created_at: string
+          details_json: Json | null
+          event_type: string
+          id: string
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          details_json?: Json | null
+          event_type: string
+          id?: string
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          details_json?: Json | null
+          event_type?: string
+          id?: string
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "send_events_message_id_fkey"
             columns: ["message_id"]
             isOneToOne: false
             referencedRelation: "messages"
