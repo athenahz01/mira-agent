@@ -33,6 +33,9 @@
     "test:draft-shape": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-draft-shape.ts",
     "test:drafting-service": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-drafting-service.ts",
     "test:auto-draft-batch": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-auto-draft-batch.ts",
+    "test:pacing-logic": "node --experimental-strip-types scripts/test-pacing-logic.ts",
+    "test:gmail-send-mock": "node --experimental-strip-types scripts/test-gmail-send-mock.ts",
+    "test:send-service": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-send-service.ts",
     "worker:dev": "node --env-file-if-exists=.env.local --experimental-strip-types workers/dev.ts"
   },
   "dependencies": {
