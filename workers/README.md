@@ -10,6 +10,8 @@ the Next.js request cycle. It currently handles:
 - `auto_draft`: batch draft generation for the approval queue.
 - `send_email`: drains approved messages whose scheduled send time has
   arrived and sends them through the connected Gmail account.
+- `inbox_poll`: checks Gmail for replies in threads Mira has sent.
+- `follow_up_generate`: scans sent campaigns and drafts due follow-ups.
 
 ## Local Setup
 
@@ -25,7 +27,7 @@ Required local env vars live in `../.env.local`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email,inbox_poll,follow_up_generate
 WORKER_ID=local-mira-worker
 RAPIDAPI_KEY=
 RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
@@ -48,7 +50,7 @@ pnpm worker:dev
 You should see:
 
 ```text
-worker starting, id=<uuid>, kinds=page_scrape,instagram_scrape,auto_draft,send_email
+worker starting, id=<uuid>, kinds=page_scrape,instagram_scrape,auto_draft,send_email,inbox_poll,follow_up_generate
 ```
 
 Then open `/brands` or `/approvals`, enqueue a scrape or auto-draft job, and
@@ -67,7 +69,7 @@ yet. When ready:
 ```bash
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email,inbox_poll,follow_up_generate
 WORKER_ID=railway-mira-worker-1
 RAPIDAPI_KEY=
 RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
@@ -84,12 +86,13 @@ is required because the worker claims jobs through the service-role-only
 For the cheaper one-worker Railway Hobby setup, use:
 
 ```bash
-WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email,inbox_poll,follow_up_generate
 ```
 
 The worker loop tries each kind in order on every tick and claims the first
 available job. `WORKER_KIND=all` is a shorthand for all current kinds:
-`page_scrape`, `instagram_scrape`, `auto_draft`, and `send_email`.
+`page_scrape`, `instagram_scrape`, `auto_draft`, `send_email`, `inbox_poll`,
+and `follow_up_generate`.
 
 The Docker image uses the official Playwright base image, so Chromium is
 already installed in the container.

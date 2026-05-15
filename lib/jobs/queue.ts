@@ -8,7 +8,9 @@ export type JobKind =
   | "page_scrape"
   | "instagram_scrape"
   | "auto_draft"
-  | "send_email";
+  | "send_email"
+  | "inbox_poll"
+  | "follow_up_generate";
 
 export async function claimNextJob(
   supabase: SupabaseClient<Database>,
