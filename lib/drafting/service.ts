@@ -751,9 +751,6 @@ async function insertMessageVersion(
   version: number,
   draft: DraftJson,
 ) {
-  const metadata = {
-    subject_variants: draft.subject_variants,
-  };
   const { data, error } = await context.supabase
     .from("messages")
     .insert({
@@ -765,9 +762,9 @@ async function insertMessageVersion(
       body_text: draft.body_text,
       body_html: draft.body_html,
       status: "pending_approval",
+      subject_variants: draft.subject_variants,
       model_used: draft.model_used,
       prompt_hash: draft.prompt_hash,
-      edit_diff: metadata as Json,
     })
     .select("*")
     .single();
@@ -1202,6 +1199,10 @@ function readScoreRationale(value: Json | null): ScoreRationaleJson | null {
 }
 
 function readSubjectVariants(message: Tables<"messages">) {
+  if (message.subject_variants.length > 0) {
+    return message.subject_variants;
+  }
+
   const record = readJsonRecord(message.edit_diff);
   const variants = Array.isArray(record.subject_variants)
     ? record.subject_variants.filter(

@@ -2,7 +2,11 @@ import { defaultVoiceStyleGuide } from "../lib/db/style-guide.ts";
 import type { MediaKitJson } from "../lib/db/media-kit.ts";
 import type { ResearchBriefJson } from "../lib/db/research-brief.ts";
 import { draftJsonSchema } from "../lib/db/draft.ts";
-import { buildDraftPrompt, generateDraft } from "../lib/llm/draft.ts";
+import {
+  buildDraftPrompt,
+  generateDraft,
+  type DraftInput,
+} from "../lib/llm/draft.ts";
 import type { ScoringBrand } from "../lib/scoring/rules.ts";
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -11,7 +15,7 @@ if (!process.env.ANTHROPIC_API_KEY) {
 }
 
 async function main() {
-  const input = {
+  const input: DraftInput = {
     creatorProfile: {
       handle: "athena_hz",
       display_name: "Athena Huo",

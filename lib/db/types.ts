@@ -926,6 +926,7 @@ export type Database = {
           sent_at: string | null
           status: string
           subject: string
+          subject_variants: string[]
           updated_at: string
           user_id: string
           version: number
@@ -948,6 +949,7 @@ export type Database = {
           sent_at?: string | null
           status?: string
           subject: string
+          subject_variants?: string[]
           updated_at?: string
           user_id: string
           version: number
@@ -970,6 +972,7 @@ export type Database = {
           sent_at?: string | null
           status?: string
           subject?: string
+          subject_variants?: string[]
           updated_at?: string
           user_id?: string
           version?: number
