@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import {
-  approveDraft,
   excludeBrandFromQueue,
   generateAndPersistPitch,
   listPendingApprovals,
@@ -16,6 +15,12 @@ import {
 import type { Json, Tables } from "@/lib/db/types";
 import { enqueueJob } from "@/lib/jobs/queue";
 import { DEAL_TYPES, type DealType } from "@/lib/scoring/rules";
+import {
+  approveAndSchedule,
+  undoApproval,
+  type ApproveAndScheduleOptions,
+  type SendDecision,
+} from "@/lib/sending/service";
 import type { ActionResult } from "@/lib/server/action";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,6 +36,7 @@ const pendingApprovalFiltersSchema = z.object({
 const approveDraftSchema = z.object({
   editedSubject: z.string().trim().min(1).optional(),
   editedBody: z.string().min(1).optional(),
+  pickedSubjectVariant: z.number().int().min(0).max(2).optional(),
 });
 
 export type AutoDraftJobStatus = Pick<
@@ -53,6 +59,19 @@ export async function enqueueAutoDraftBatch(
       maxAttempts: 1,
     });
   });
+}
+
+export async function enqueueSendQueueDrain(): Promise<
+  ActionResult<Tables<"jobs">>
+> {
+  return runDraftingAction("Send queue drain queued.", async (context) =>
+    enqueueJob(context.supabase, {
+      userId: context.userId,
+      kind: "send_email",
+      payload: {} as Json,
+      maxAttempts: 1,
+    }),
+  );
 }
 
 export async function getAutoDraftBatchStatus(): Promise<
@@ -110,13 +129,26 @@ export async function listPendingApprovalsAction(
 export async function approveDraftAction(
   messageId: string,
   edits: unknown,
-): Promise<ActionResult<Tables<"messages">>> {
-  return runDraftingAction("Draft approved.", async (context) =>
-    approveDraft(
+): Promise<
+  ActionResult<{
+    message: Tables<"messages">;
+    decision: SendDecision;
+  }>
+> {
+  return runDraftingAction("Draft approved and scheduled.", async (context) =>
+    approveAndSchedule(
       context,
       uuidSchema.parse(messageId),
-      approveDraftSchema.parse(edits),
+      approveDraftSchema.parse(edits) satisfies ApproveAndScheduleOptions,
     ),
+  );
+}
+
+export async function undoApprovalAction(
+  messageId: string,
+): Promise<ActionResult<Tables<"messages">>> {
+  return runDraftingAction("Approval undone.", async (context) =>
+    undoApproval(context, uuidSchema.parse(messageId)),
   );
 }
 
@@ -170,6 +202,7 @@ async function runDraftingAction<T>(
     revalidatePath("/brands");
     revalidatePath("/dashboard");
     revalidatePath("/settings");
+    revalidatePath("/sends");
 
     return {
       ok: true,

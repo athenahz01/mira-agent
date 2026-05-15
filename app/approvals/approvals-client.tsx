@@ -14,6 +14,7 @@ import {
   listPendingApprovalsAction,
   regenerateDraftAction,
   skipDraftAction,
+  undoApprovalAction,
 } from "@/app/actions/drafting";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -210,7 +211,37 @@ export function ApprovalsClient({
         return;
       }
 
-      toast.success("Draft approved.");
+      if (result.data.decision.kind === "send_immediately") {
+        toast.success("Sending in 30s.", {
+          duration: 30_000,
+          action: {
+            label: "Undo",
+            onClick: () => undoApprovalFromToast(row.message.id),
+          },
+        });
+      } else if (result.data.decision.kind === "schedule_at") {
+        toast.success(
+          `Scheduled for ${new Date(
+            result.data.decision.scheduled_send_at,
+          ).toLocaleString()}.`,
+        );
+      } else {
+        toast.error("Mira could not schedule this send.");
+      }
+      await refreshList();
+    });
+  }
+
+  function undoApprovalFromToast(messageId: string) {
+    startMutating(async () => {
+      const result = await undoApprovalAction(messageId);
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success("Approval undone.");
       await refreshList();
     });
   }
@@ -501,7 +532,7 @@ function DraftCard({
               <div className="flex flex-wrap gap-2">
                 <Button disabled={isMutating} onClick={onApprove} type="button">
                   {isMutating ? <Loader2 className="animate-spin" /> : null}
-                  Approve
+                  Approve & send
                 </Button>
                 <Button
                   disabled={isMutating}

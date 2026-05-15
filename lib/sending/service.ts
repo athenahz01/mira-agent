@@ -9,6 +9,8 @@ import {
 } from "../gmail/send.ts";
 import { type SendDecision, decideSendTime } from "./pacing.ts";
 
+export type { SendDecision } from "./pacing.ts";
+
 export type SendingContext = {
   supabase: SupabaseClient;
   userId: string;

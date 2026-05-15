@@ -257,6 +257,10 @@ function OutreachRuleCard({
     creator_profile_id: rule.creator_profile_id,
     max_sends_per_day: rule.max_sends_per_day,
     max_drafts_per_day: rule.max_drafts_per_day,
+    send_mode:
+      rule.send_mode === "queued" || rule.send_mode === "immediate"
+        ? rule.send_mode
+        : "immediate",
     send_window_start_hour: rule.send_window_start_hour,
     send_window_end_hour: rule.send_window_end_hour,
     send_timezone: rule.send_timezone,
@@ -290,6 +294,35 @@ function OutreachRuleCard({
         <CardDescription>Adjust pacing and approval defaults.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
+        <div className="grid gap-3 rounded-md border p-3">
+          <div>
+            <p className="font-medium">Sending</p>
+            <p className="text-sm text-muted-foreground">
+              Immediate sends wait 30 seconds for undo. Queued sends stay inside
+              the send window and use spacing rules.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              onClick={() =>
+                setForm((current) => ({ ...current, send_mode: "immediate" }))
+              }
+              type="button"
+              variant={form.send_mode === "immediate" ? "default" : "outline"}
+            >
+              Immediate
+            </Button>
+            <Button
+              onClick={() =>
+                setForm((current) => ({ ...current, send_mode: "queued" }))
+              }
+              type="button"
+              variant={form.send_mode === "queued" ? "default" : "outline"}
+            >
+              Queued
+            </Button>
+          </div>
+        </div>
         <div className="grid gap-4 md:grid-cols-3">
           <NumberField
             label="Max sends per day"
