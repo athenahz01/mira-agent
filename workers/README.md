@@ -8,6 +8,8 @@ the Next.js request cycle. It currently handles:
 - `instagram_scrape`: RapidAPI Instagram competitor reverse-lookup for
   sponsored brand tags.
 - `auto_draft`: batch draft generation for the approval queue.
+- `send_email`: drains approved messages whose scheduled send time has
+  arrived and sends them through the connected Gmail account.
 
 ## Local Setup
 
@@ -23,7 +25,7 @@ Required local env vars live in `../.env.local`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape,instagram_scrape,auto_draft
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email
 WORKER_ID=local-mira-worker
 RAPIDAPI_KEY=
 RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
@@ -46,7 +48,7 @@ pnpm worker:dev
 You should see:
 
 ```text
-worker starting, id=<uuid>, kinds=page_scrape,instagram_scrape,auto_draft
+worker starting, id=<uuid>, kinds=page_scrape,instagram_scrape,auto_draft,send_email
 ```
 
 Then open `/brands` or `/approvals`, enqueue a scrape or auto-draft job, and
@@ -65,7 +67,7 @@ yet. When ready:
 ```bash
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape,instagram_scrape,auto_draft
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email
 WORKER_ID=railway-mira-worker-1
 RAPIDAPI_KEY=
 RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
@@ -82,12 +84,12 @@ is required because the worker claims jobs through the service-role-only
 For the cheaper one-worker Railway Hobby setup, use:
 
 ```bash
-WORKER_KIND=page_scrape,instagram_scrape,auto_draft
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft,send_email
 ```
 
 The worker loop tries each kind in order on every tick and claims the first
 available job. `WORKER_KIND=all` is a shorthand for all current kinds:
-`page_scrape`, `instagram_scrape`, and `auto_draft`.
+`page_scrape`, `instagram_scrape`, `auto_draft`, and `send_email`.
 
 The Docker image uses the official Playwright base image, so Chromium is
 already installed in the container.

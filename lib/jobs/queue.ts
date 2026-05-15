@@ -4,7 +4,11 @@ import type { Database, Json, Tables } from "@/lib/db/types";
 
 export type Job = Tables<"jobs">;
 
-export type JobKind = "page_scrape" | "instagram_scrape" | "auto_draft";
+export type JobKind =
+  | "page_scrape"
+  | "instagram_scrape"
+  | "auto_draft"
+  | "send_email";
 
 export async function claimNextJob(
   supabase: SupabaseClient<Database>,
