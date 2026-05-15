@@ -9,6 +9,7 @@ import {
   failJob,
   type JobKind,
 } from "../lib/jobs/queue.ts";
+import { processAutoDraftJob } from "./scrapers/auto-draft.ts";
 import { processInstagramScrapeJob } from "./scrapers/instagram-scrape.ts";
 import { processPageScrapeJob } from "./scrapers/page-scrape.ts";
 
@@ -57,6 +58,8 @@ async function dispatchJob(job: Tables<"jobs">): Promise<Json> {
       return (await processPageScrapeJob(supabase, job)) as Json;
     case "instagram_scrape":
       return (await processInstagramScrapeJob(supabase, job)) as Json;
+    case "auto_draft":
+      return (await processAutoDraftJob(supabase, job)) as Json;
     default:
       throw new Error(`Unknown job kind: ${job.kind}`);
   }
@@ -96,12 +99,16 @@ function readWorkerKinds(): JobKind[] {
   const value = process.env.WORKER_KIND ?? "page_scrape";
   const rawKinds =
     value.trim().toLowerCase() === "all"
-      ? ["page_scrape", "instagram_scrape"]
+      ? ["page_scrape", "instagram_scrape", "auto_draft"]
       : value.split(",").map((kind) => kind.trim());
   const kinds: JobKind[] = [];
 
   for (const kind of rawKinds) {
-    if (kind === "page_scrape" || kind === "instagram_scrape") {
+    if (
+      kind === "page_scrape" ||
+      kind === "instagram_scrape" ||
+      kind === "auto_draft"
+    ) {
       if (!kinds.includes(kind)) {
         kinds.push(kind);
       }

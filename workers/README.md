@@ -7,6 +7,7 @@ the Next.js request cycle. It currently handles:
   partnership, and about pages.
 - `instagram_scrape`: RapidAPI Instagram competitor reverse-lookup for
   sponsored brand tags.
+- `auto_draft`: batch draft generation for the approval queue.
 
 ## Local Setup
 
@@ -22,16 +23,19 @@ Required local env vars live in `../.env.local`:
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape,instagram_scrape
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft
 WORKER_ID=local-mira-worker
 RAPIDAPI_KEY=
 RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
 RAPIDAPI_INSTAGRAM_RATE_LIMIT_PER_MINUTE=30
+ANTHROPIC_API_KEY=
+ANTHROPIC_OPUS_MODEL=claude-opus-4-7
+ANTHROPIC_SONNET_MODEL=claude-sonnet-4-5
 ```
 
 `WORKER_ID` is optional. If omitted, the worker generates a UUID at startup.
 `WORKER_KIND` accepts a single kind, a comma-separated list such as
-`page_scrape,instagram_scrape`, or `all`.
+`page_scrape,instagram_scrape,auto_draft`, or `all`.
 
 Run locally from the repo root:
 
@@ -42,11 +46,11 @@ pnpm worker:dev
 You should see:
 
 ```text
-worker starting, id=<uuid>, kinds=page_scrape,instagram_scrape
+worker starting, id=<uuid>, kinds=page_scrape,instagram_scrape,auto_draft
 ```
 
-Then open `/brands`, enqueue a page scrape or Instagram scrape job, and watch
-the worker logs for claim/complete/fail messages.
+Then open `/brands` or `/approvals`, enqueue a scrape or auto-draft job, and
+watch the worker logs for claim/complete/fail messages.
 
 ## Railway Deployment
 
@@ -61,11 +65,14 @@ yet. When ready:
 ```bash
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
-WORKER_KIND=page_scrape,instagram_scrape
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft
 WORKER_ID=railway-mira-worker-1
 RAPIDAPI_KEY=
 RAPIDAPI_INSTAGRAM_HOST=instagram-scraper-stable-api.p.rapidapi.com
 RAPIDAPI_INSTAGRAM_RATE_LIMIT_PER_MINUTE=30
+ANTHROPIC_API_KEY=
+ANTHROPIC_OPUS_MODEL=claude-opus-4-7
+ANTHROPIC_SONNET_MODEL=claude-sonnet-4-5
 ```
 
 Use the same Supabase project as the Vercel app. `SUPABASE_SERVICE_ROLE_KEY`
@@ -75,11 +82,12 @@ is required because the worker claims jobs through the service-role-only
 For the cheaper one-worker Railway Hobby setup, use:
 
 ```bash
-WORKER_KIND=page_scrape,instagram_scrape
+WORKER_KIND=page_scrape,instagram_scrape,auto_draft
 ```
 
 The worker loop tries each kind in order on every tick and claims the first
-available job. `WORKER_KIND=all` is a shorthand for the same two current kinds.
+available job. `WORKER_KIND=all` is a shorthand for all current kinds:
+`page_scrape`, `instagram_scrape`, and `auto_draft`.
 
 The Docker image uses the official Playwright base image, so Chromium is
 already installed in the container.
