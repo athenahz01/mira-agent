@@ -21,6 +21,14 @@ type AppUser = Database["public"]["Tables"]["users"]["Row"];
 type CreatorProfile = Database["public"]["Tables"]["creator_profiles"]["Row"];
 type VoiceGuide = Database["public"]["Tables"]["voice_style_guides"]["Row"];
 type MediaKit = Database["public"]["Tables"]["media_kits"]["Row"];
+type Job = Database["public"]["Tables"]["jobs"]["Row"];
+
+type DraftingSummary = {
+  pendingApprovals: number;
+  approvedToday: number;
+  approvedThisWeek: number;
+  latestAutoDraftJob: Job | null;
+};
 
 type DashboardData = {
   name: string;
@@ -30,6 +38,7 @@ type DashboardData = {
   brandSummary: BrandPoolSummary;
   jobSummary: JobSummary;
   topOpportunitiesByProfileId: Record<string, TopOpportunity[]>;
+  draftingSummary: DraftingSummary;
 };
 
 async function getDashboardData(): Promise<DashboardData | null> {
@@ -49,6 +58,7 @@ async function getDashboardData(): Promise<DashboardData | null> {
     kitsResult,
     brandSummary,
     jobSummary,
+    draftingSummary,
   ] = await Promise.all([
     supabase
       .from("users")
@@ -75,6 +85,10 @@ async function getDashboardData(): Promise<DashboardData | null> {
       userId: user.id,
     }),
     getJobSummary({
+      supabase,
+      userId: user.id,
+    }),
+    getDraftingSummary({
       supabase,
       userId: user.id,
     }),
@@ -112,7 +126,86 @@ async function getDashboardData(): Promise<DashboardData | null> {
     brandSummary,
     jobSummary,
     topOpportunitiesByProfileId,
+    draftingSummary,
   };
+}
+
+async function getDraftingSummary(context: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+}): Promise<DraftingSummary> {
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const [
+    pendingResult,
+    approvedTodayResult,
+    approvedWeekResult,
+    latestJobResult,
+  ] = await Promise.all([
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("status", "pending_approval"),
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("status", "approved")
+      .gte("approved_at", startOfToday.toISOString()),
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("status", "approved")
+      .gte("approved_at", startOfWeek.toISOString()),
+    context.supabase
+      .from("jobs")
+      .select("*")
+      .eq("user_id", context.userId)
+      .eq("kind", "auto_draft")
+      .order("created_at", { ascending: false })
+      .limit(1),
+  ]);
+
+  if (pendingResult.error) {
+    throw new Error(pendingResult.error.message);
+  }
+
+  if (approvedTodayResult.error) {
+    throw new Error(approvedTodayResult.error.message);
+  }
+
+  if (approvedWeekResult.error) {
+    throw new Error(approvedWeekResult.error.message);
+  }
+
+  if (latestJobResult.error) {
+    throw new Error(latestJobResult.error.message);
+  }
+
+  return {
+    pendingApprovals: pendingResult.count ?? 0,
+    approvedToday: approvedTodayResult.count ?? 0,
+    approvedThisWeek: approvedWeekResult.count ?? 0,
+    latestAutoDraftJob: latestJobResult.data?.[0] ?? null,
+  };
+}
+
+function readDraftingJobSummary(value: Job["result_json"]) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "no summary yet";
+  }
+
+  const draftsCreated = value.draftsCreated;
+  const profilesProcessed = value.profilesProcessed;
+
+  if (typeof draftsCreated !== "number" || typeof profilesProcessed !== "number") {
+    return "no summary yet";
+  }
+
+  return `${profilesProcessed} profile${profilesProcessed === 1 ? "" : "s"}, ${draftsCreated} draft${draftsCreated === 1 ? "" : "s"} created`;
 }
 
 export default async function DashboardPage() {
@@ -333,6 +426,59 @@ export default async function DashboardPage() {
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Drafting</CardTitle>
+            <CardDescription>
+              Pending pitches and recent approval activity.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.draftingSummary.pendingApprovals}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Pending approvals
+                </p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.draftingSummary.approvedToday}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Approved today
+                </p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.draftingSummary.approvedThisWeek}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Approved this week
+                </p>
+              </div>
+            </div>
+            {data.draftingSummary.latestAutoDraftJob ? (
+              <p className="text-sm text-muted-foreground">
+                Last auto-draft batch:{" "}
+                {data.draftingSummary.latestAutoDraftJob.status} ·{" "}
+                {readDraftingJobSummary(
+                  data.draftingSummary.latestAutoDraftJob.result_json,
+                )}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No auto-draft batch has run yet.
+              </p>
+            )}
+            <Button asChild className="w-fit" variant="outline">
+              <a href="/approvals">Open approval queue</a>
+            </Button>
           </CardContent>
         </Card>
 
