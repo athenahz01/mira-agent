@@ -36,6 +36,11 @@
     "test:pacing-logic": "node --experimental-strip-types scripts/test-pacing-logic.ts",
     "test:gmail-send-mock": "node --experimental-strip-types scripts/test-gmail-send-mock.ts",
     "test:send-service": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-send-service.ts",
+    "test:reply-classify-shape": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-reply-classify-shape.ts",
+    "test:reply-classification-mapping": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-reply-classification-mapping.ts",
+    "test:process-inbound-reply": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-process-inbound-reply.ts",
+    "test:follow-up-generation": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-follow-up-generation.ts",
+    "test:unsubscribe-handling": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/test-unsubscribe-handling.ts",
     "worker:dev": "node --env-file-if-exists=.env.local --experimental-strip-types workers/dev.ts"
   },
   "dependencies": {
