@@ -256,6 +256,7 @@ function OutreachRuleCard({
     id: rule.id,
     creator_profile_id: rule.creator_profile_id,
     max_sends_per_day: rule.max_sends_per_day,
+    max_drafts_per_day: rule.max_drafts_per_day,
     send_window_start_hour: rule.send_window_start_hour,
     send_window_end_hour: rule.send_window_end_hour,
     send_timezone: rule.send_timezone,
@@ -296,6 +297,14 @@ function OutreachRuleCard({
               setForm((current) => ({ ...current, max_sends_per_day: value }))
             }
             value={form.max_sends_per_day}
+          />
+          <NumberField
+            label="Max drafts per day"
+            max={50}
+            onChange={(value) =>
+              setForm((current) => ({ ...current, max_drafts_per_day: value }))
+            }
+            value={form.max_drafts_per_day}
           />
           <NumberField
             label="Send window start"
@@ -423,14 +432,17 @@ function NumberField({
   label,
   value,
   onChange,
+  max,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  max?: number;
 }) {
   return (
     <Field label={label}>
       <Input
+        max={max}
         min={0}
         onChange={(event) => onChange(Number(event.target.value))}
         type="number"

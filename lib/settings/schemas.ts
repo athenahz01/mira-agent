@@ -4,6 +4,7 @@ export const outreachRulesSchema = z.object({
   id: z.string().uuid().optional(),
   creator_profile_id: z.string().uuid().nullable(),
   max_sends_per_day: z.number().int().nonnegative(),
+  max_drafts_per_day: z.number().int().min(0).max(50),
   send_window_start_hour: z.number().int().min(0).max(23),
   send_window_end_hour: z.number().int().min(0).max(23),
   send_timezone: z.string().min(1),
