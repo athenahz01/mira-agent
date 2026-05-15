@@ -9,6 +9,7 @@ import {
   completeOnboarding as completeOnboardingForUser,
   ensureDefaultCreatorProfiles,
   generateAndPersistVoiceGuide,
+  saveCompetitorHandles as saveCompetitorHandlesForUser,
   saveVoiceGuideEdits as saveVoiceGuideEditsForUser,
   upsertCreatorProfile as upsertCreatorProfileForUser,
   upsertUserBasics as upsertUserBasicsForUser,
@@ -78,6 +79,14 @@ export async function saveVoiceGuideEdits(
       guideId,
       edits,
     }),
+  );
+}
+
+export async function saveCompetitorHandles(
+  input: unknown,
+): Promise<ActionResult<Tables<"competitor_handles">[]>> {
+  return runOnboardingAction("Competitor handles saved.", async (context) =>
+    saveCompetitorHandlesForUser(context, input),
   );
 }
 

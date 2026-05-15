@@ -69,7 +69,28 @@ export const saveVoiceGuideEditsSchema = z.object({
   edits: voiceStyleGuideJsonSchema,
 });
 
+export const competitorHandlesInputSchema = z.object({
+  profiles: z.array(
+    z.object({
+      profileId: z.string().uuid(),
+      handles: textArraySchema.transform((handles) =>
+        handles.map((handle) =>
+          handle
+            .toLowerCase()
+            .replace(/^https?:\/\//, "")
+            .replace(/^www\./, "")
+            .replace(/^instagram\.com\//, "")
+            .replace(/[/#?].*$/, "")
+            .replace(/^@/, "")
+            .trim(),
+        ),
+      ),
+    }),
+  ),
+});
+
 export type UserBasicsInput = z.input<typeof userBasicsSchema>;
 export type CreatorProfileInput = z.input<typeof creatorProfileSchema>;
 export type VoiceSampleInput = z.infer<typeof voiceSampleInputSchema>;
 export type AddVoiceSamplesInput = z.infer<typeof addVoiceSamplesSchema>;
+export type CompetitorHandlesInput = z.input<typeof competitorHandlesInputSchema>;

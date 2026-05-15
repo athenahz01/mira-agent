@@ -81,6 +81,7 @@ export default async function OnboardingPage({
       initialProfiles={profiles}
       initialStep={normalizeStep(searchParams?.step)}
       initialUser={snapshot.user}
+      initialCompetitorHandlesByProfileId={snapshot.competitorHandlesByProfileId}
       profileFocus={searchParams?.profile}
       voiceSampleCountsByProfileId={snapshot.voiceSampleCountsByProfileId}
     />
@@ -98,6 +99,10 @@ function normalizeStep(step: string | undefined) {
 
   if (step === "guide") {
     return 4;
+  }
+
+  if (step === "competitors") {
+    return 5;
   }
 
   return 1;

@@ -15,6 +15,7 @@ import {
 } from "./defaults.ts";
 import {
   addVoiceSamplesSchema,
+  competitorHandlesInputSchema,
   creatorProfileSchema,
   profileIdSchema,
   saveVoiceGuideEditsSchema,
@@ -31,12 +32,14 @@ export type OnboardingUser = Tables<"users">;
 export type CreatorProfile = Tables<"creator_profiles">;
 export type VoiceGuideRow = Tables<"voice_style_guides">;
 export type VoiceSampleRow = Tables<"voice_samples">;
+export type CompetitorHandleRow = Tables<"competitor_handles">;
 
 export type OnboardingSnapshot = {
   user: OnboardingUser | null;
   creatorProfiles: CreatorProfile[];
   activeGuideByProfileId: Record<string, VoiceGuideRow>;
   voiceSampleCountsByProfileId: Record<string, number>;
+  competitorHandlesByProfileId: Record<string, CompetitorHandleRow[]>;
 };
 
 type VoiceGuideGenerator = typeof generateVoiceGuide;
@@ -60,9 +63,14 @@ export async function getOnboardingSnapshot(
   const profileIds = profiles.map((profile) => profile.id);
   const activeGuideByProfileId: Record<string, VoiceGuideRow> = {};
   const voiceSampleCountsByProfileId: Record<string, number> = {};
+  const competitorHandlesByProfileId: Record<string, CompetitorHandleRow[]> = {};
 
   if (profileIds.length > 0) {
-    const [{ data: guides, error: guideError }, samples] = await Promise.all([
+    const [
+      { data: guides, error: guideError },
+      samples,
+      { data: competitorHandles, error: competitorError },
+    ] = await Promise.all([
       context.supabase
         .from("voice_style_guides")
         .select("*")
@@ -70,10 +78,22 @@ export async function getOnboardingSnapshot(
         .eq("is_active", true)
         .in("creator_profile_id", profileIds),
       listVoiceSamples(context),
+      context.supabase
+        .from("competitor_handles")
+        .select("*")
+        .eq("user_id", context.userId)
+        .in("creator_profile_id", profileIds)
+        .order("handle", {
+          ascending: true,
+        }),
     ]);
 
     if (guideError) {
       throw new Error(guideError.message);
+    }
+
+    if (competitorError) {
+      throw new Error(competitorError.message);
     }
 
     for (const guide of guides ?? []) {
@@ -84,6 +104,13 @@ export async function getOnboardingSnapshot(
       voiceSampleCountsByProfileId[sample.creator_profile_id] =
         (voiceSampleCountsByProfileId[sample.creator_profile_id] ?? 0) + 1;
     }
+
+    for (const handle of competitorHandles ?? []) {
+      competitorHandlesByProfileId[handle.creator_profile_id] = [
+        ...(competitorHandlesByProfileId[handle.creator_profile_id] ?? []),
+        handle,
+      ];
+    }
   }
 
   return {
@@ -91,6 +118,7 @@ export async function getOnboardingSnapshot(
     creatorProfiles: profiles,
     activeGuideByProfileId,
     voiceSampleCountsByProfileId,
+    competitorHandlesByProfileId,
   };
 }
 
@@ -340,6 +368,48 @@ export async function saveVoiceGuideEdits(
 
   if (error || !data) {
     throw new Error(error?.message ?? "Could not save voice guide edits.");
+  }
+
+  return data;
+}
+
+export async function saveCompetitorHandles(
+  context: OnboardingContext,
+  input: unknown,
+): Promise<CompetitorHandleRow[]> {
+  const values = competitorHandlesInputSchema.parse(input);
+  const rows: TablesInsert<"competitor_handles">[] = [];
+
+  for (const profile of values.profiles) {
+    await assertProfileOwner(context, profile.profileId);
+
+    for (const handle of profile.handles) {
+      if (!handle) {
+        continue;
+      }
+
+      rows.push({
+        user_id: context.userId,
+        creator_profile_id: profile.profileId,
+        handle,
+        platform: "instagram",
+      });
+    }
+  }
+
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const { data, error } = await context.supabase
+    .from("competitor_handles")
+    .upsert(rows, {
+      onConflict: "creator_profile_id,handle",
+    })
+    .select("*");
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "Could not save competitor handles.");
   }
 
   return data;

@@ -11,6 +11,7 @@ import {
   addVoiceSamples,
   completeOnboarding,
   generateVoiceGuide,
+  saveCompetitorHandles,
   saveVoiceGuideEdits,
   upsertCreatorProfile,
   upsertUserBasics,
@@ -62,6 +63,10 @@ type OnboardingClientProps = {
   initialActiveGuides: Record<string, Tables<"voice_style_guides">>;
   initialGuideJsonByProfileId: Record<string, VoiceStyleGuideJson>;
   voiceSampleCountsByProfileId: Record<string, number>;
+  initialCompetitorHandlesByProfileId: Record<
+    string,
+    Tables<"competitor_handles">[]
+  >;
   initialStep: number;
   profileFocus?: string;
 };
@@ -71,6 +76,7 @@ const stepLabels = [
   "Profiles",
   "Samples",
   "Voice Guide",
+  "Competitors",
   "Done",
 ] as const;
 
@@ -102,6 +108,7 @@ export function OnboardingClient({
   initialActiveGuides,
   initialGuideJsonByProfileId,
   voiceSampleCountsByProfileId,
+  initialCompetitorHandlesByProfileId,
   initialStep,
   profileFocus,
 }: OnboardingClientProps) {
@@ -214,6 +221,14 @@ export function OnboardingClient({
         ) : null}
 
         {step === 5 ? (
+          <CompetitorHandlesStep
+            competitorHandlesByProfileId={initialCompetitorHandlesByProfileId}
+            onStepComplete={() => setStep(6)}
+            profiles={activeProfilesWithIds}
+          />
+        ) : null}
+
+        {step === 6 ? (
           <DoneStep canComplete={canComplete} profiles={activeProfilesWithIds} />
         ) : null}
       </section>
@@ -1094,6 +1109,90 @@ function VoiceGuideSummary({ guide }: { guide: VoiceStyleGuideJson }) {
   );
 }
 
+function CompetitorHandlesStep({
+  profiles,
+  competitorHandlesByProfileId,
+  onStepComplete,
+}: {
+  profiles: Tables<"creator_profiles">[];
+  competitorHandlesByProfileId: Record<string, Tables<"competitor_handles">[]>;
+  onStepComplete: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const [handlesByProfileId, setHandlesByProfileId] = useState<
+    Record<string, string[]>
+  >(() =>
+    Object.fromEntries(
+      profiles.map((profile) => [
+        profile.id,
+        (competitorHandlesByProfileId[profile.id] ?? []).map(
+          (handle) => handle.handle,
+        ),
+      ]),
+    ),
+  );
+
+  function save() {
+    startTransition(async () => {
+      const result = await saveCompetitorHandles({
+        profiles: profiles.map((profile) => ({
+          profileId: profile.id,
+          handles: handlesByProfileId[profile.id] ?? [],
+        })),
+      });
+
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+
+      toast.success(result.message);
+      onStepComplete();
+    });
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Seed competitor handles</CardTitle>
+        <CardDescription>
+          Add creators in your niche or tier so Mira can discover brands from
+          their sponsored posts.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        {profiles.map((profile) => (
+          <div className="grid gap-2" key={profile.id}>
+            <Label>@{profile.handle}</Label>
+            <ChipInput
+              onChange={(handles) =>
+                setHandlesByProfileId((current) => ({
+                  ...current,
+                  [profile.id]: handles.map(normalizeHandle).filter(Boolean),
+                }))
+              }
+              placeholder="creatorone, creatortwo"
+              value={handlesByProfileId[profile.id] ?? []}
+            />
+            <p className="text-sm text-muted-foreground">
+              Aim for 3-5 creators you already use as a reference point.
+            </p>
+          </div>
+        ))}
+        <div className="flex flex-wrap gap-3">
+          <Button disabled={isPending} onClick={save} type="button">
+            {isPending ? <Loader2 className="animate-spin" /> : null}
+            Save handles
+          </Button>
+          <Button onClick={onStepComplete} type="button" variant="ghost">
+            I&apos;ll add them later
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function DoneStep({
   profiles,
   canComplete,
@@ -1134,6 +1233,18 @@ function DoneStep({
       </CardContent>
     </Card>
   );
+}
+
+function normalizeHandle(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/^instagram\.com\//, "")
+    .replace(/[/#?].*$/, "")
+    .replace(/^@/, "")
+    .trim();
 }
 
 function parseJsonDraft(raw: string) {

@@ -658,8 +658,12 @@ export function BrandsClient({
           </Button>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-3">
-          <Card>
+        <details className="order-3 rounded-lg border bg-background p-4">
+          <summary className="cursor-pointer text-sm font-medium">
+            Add manually
+          </summary>
+          <div className="mt-4 grid gap-6 xl:grid-cols-3">
+            <Card>
             <CardHeader>
               <CardTitle>Add a brand</CardTitle>
               <CardDescription>
@@ -676,9 +680,9 @@ export function BrandsClient({
                 submitLabel="Add brand"
               />
             </CardContent>
-          </Card>
+            </Card>
 
-          <Card>
+            <Card>
             <CardHeader>
               <CardTitle>Bulk enrich</CardTitle>
               <CardDescription>
@@ -717,9 +721,9 @@ export function BrandsClient({
                 ) : null}
               </div>
             </CardContent>
-          </Card>
+            </Card>
 
-          <Card>
+            <Card>
             <CardHeader>
               <CardTitle>Bulk import from CSV</CardTitle>
               <CardDescription>
@@ -779,27 +783,30 @@ export function BrandsClient({
                 </div>
               ) : null}
             </CardContent>
-          </Card>
+            </Card>
+          </div>
+        </details>
+
+        <div className="order-1">
+          <CompetitorScrapersPanel
+            data={competitorScrapers}
+            inputs={competitorInputs}
+            isPending={isCompetitorPending}
+            onAdd={submitCompetitorHandle}
+            onChangeInput={(profileId, value) =>
+              setCompetitorInputs((current) => ({
+                ...current,
+                [profileId]: value,
+              }))
+            }
+            onRemove={deleteCompetitor}
+            onScrapeAll={scrapeAllCompetitors}
+            onScrapeOne={scrapeCompetitor}
+            result={instagramBulkResult}
+          />
         </div>
 
-        <CompetitorScrapersPanel
-          data={competitorScrapers}
-          inputs={competitorInputs}
-          isPending={isCompetitorPending}
-          onAdd={submitCompetitorHandle}
-          onChangeInput={(profileId, value) =>
-            setCompetitorInputs((current) => ({
-              ...current,
-              [profileId]: value,
-            }))
-          }
-          onRemove={deleteCompetitor}
-          onScrapeAll={scrapeAllCompetitors}
-          onScrapeOne={scrapeCompetitor}
-          result={instagramBulkResult}
-        />
-
-        <Card>
+        <Card className="order-2">
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -992,7 +999,7 @@ function CompetitorScrapersPanel({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Competitor scrapers</CardTitle>
+        <CardTitle>Discover brands</CardTitle>
         <CardDescription>
           Add creator accounts Athena studies, then Mira can pull sponsored
           brand tags from their recent posts.
