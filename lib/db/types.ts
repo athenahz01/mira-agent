@@ -1040,6 +1040,10 @@ export type Database = {
           creator_profile_id: string | null
           excluded_brand_ids: string[]
           excluded_categories: string[]
+          follow_up_1_days_after: number
+          follow_up_2_days_after_initial: number
+          follow_up_enabled: boolean
+          follow_up_max_count: number
           id: string
           max_drafts_per_day: number
           max_minutes_between_sends: number
@@ -1062,6 +1066,10 @@ export type Database = {
           creator_profile_id?: string | null
           excluded_brand_ids?: string[]
           excluded_categories?: string[]
+          follow_up_1_days_after?: number
+          follow_up_2_days_after_initial?: number
+          follow_up_enabled?: boolean
+          follow_up_max_count?: number
           id?: string
           max_drafts_per_day?: number
           max_minutes_between_sends?: number
@@ -1084,6 +1092,10 @@ export type Database = {
           creator_profile_id?: string | null
           excluded_brand_ids?: string[]
           excluded_categories?: string[]
+          follow_up_1_days_after?: number
+          follow_up_2_days_after_initial?: number
+          follow_up_enabled?: boolean
+          follow_up_max_count?: number
           id?: string
           max_drafts_per_day?: number
           max_minutes_between_sends?: number
@@ -1331,6 +1343,8 @@ export type Database = {
         Row: {
           created_at: string
           email: string
+          inbox_last_polled_at: string | null
+          inbox_poll_paused: boolean
           name: string | null
           onboarding_completed_at: string | null
           physical_address: string | null
@@ -1342,6 +1356,8 @@ export type Database = {
         Insert: {
           created_at?: string
           email: string
+          inbox_last_polled_at?: string | null
+          inbox_poll_paused?: boolean
           name?: string | null
           onboarding_completed_at?: string | null
           physical_address?: string | null
@@ -1353,6 +1369,8 @@ export type Database = {
         Update: {
           created_at?: string
           email?: string
+          inbox_last_polled_at?: string | null
+          inbox_poll_paused?: boolean
           name?: string | null
           onboarding_completed_at?: string | null
           physical_address?: string | null
