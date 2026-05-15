@@ -119,7 +119,16 @@ export function SendsClient({
                         {formatScheduled(row.message.scheduled_send_at)}
                       </CardDescription>
                     </div>
-                    <Badge variant="secondary">{row.message.status}</Badge>
+                    <div className="flex items-center gap-2">
+                      {row.message.kind.startsWith("follow_up") ? (
+                        <Badge variant="secondary">
+                          {row.message.kind === "follow_up_1"
+                            ? "Follow-up 1"
+                            : "Follow-up 2"}
+                        </Badge>
+                      ) : null}
+                      <Badge variant="secondary">{row.message.status}</Badge>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="grid gap-4">

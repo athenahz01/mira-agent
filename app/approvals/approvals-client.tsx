@@ -460,14 +460,25 @@ function DraftCard({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <CardTitle className="text-lg">
-              @{row.creator_profile.handle} · {row.campaign.deal_type} ·{" "}
+              @{row.creator_profile.handle} - {row.campaign.deal_type} -{" "}
               {row.brand.name}
             </CardTitle>
             <CardDescription>
               Drafted {new Date(row.message.created_at).toLocaleString()}
             </CardDescription>
           </div>
-          <Badge>{row.campaign.score ?? 0}/100</Badge>
+          <div className="flex items-center gap-2">
+            {row.message.kind === "reply" ? (
+              <Badge variant="secondary">Reply</Badge>
+            ) : row.message.kind.startsWith("follow_up") ? (
+              <Badge variant="secondary">
+                {row.message.kind === "follow_up_1"
+                  ? "Follow-up 1"
+                  : "Follow-up 2"}
+              </Badge>
+            ) : null}
+            <Badge>{row.campaign.score ?? 0}/100</Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -481,7 +492,7 @@ function DraftCard({
           value={row.brief.recommended_hook.pattern_name}
         />
         {row.brief.risk_flags.length > 0 ? (
-          <SummaryLine label="Risks" value={row.brief.risk_flags.join(" · ")} />
+          <SummaryLine label="Risks" value={row.brief.risk_flags.join(" - ")} />
         ) : null}
         <div className="flex flex-wrap gap-2">
           <Button onClick={onToggleExpanded} type="button" variant="outline">

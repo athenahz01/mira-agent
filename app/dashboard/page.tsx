@@ -38,6 +38,15 @@ type SendPipelineSummary = {
   failedLast7Days: number;
 };
 
+type InboxSummary = {
+  repliesLast7Days: number;
+  categoryCounts: { category: string; count: number }[];
+  pendingReplyDrafts: number;
+  pendingFollowUps: number;
+  inboxLastPolledAt: string | null;
+  inboxPollPaused: boolean;
+};
+
 type DashboardData = {
   name: string;
   profiles: CreatorProfile[];
@@ -48,6 +57,7 @@ type DashboardData = {
   topOpportunitiesByProfileId: Record<string, TopOpportunity[]>;
   draftingSummary: DraftingSummary;
   sendPipelineSummary: SendPipelineSummary;
+  inboxSummary: InboxSummary;
 };
 
 async function getDashboardData(): Promise<DashboardData | null> {
@@ -69,6 +79,7 @@ async function getDashboardData(): Promise<DashboardData | null> {
     jobSummary,
     draftingSummary,
     sendPipelineSummary,
+    inboxSummary,
   ] = await Promise.all([
     supabase
       .from("users")
@@ -103,6 +114,10 @@ async function getDashboardData(): Promise<DashboardData | null> {
       userId: user.id,
     }),
     getSendPipelineSummary({
+      supabase,
+      userId: user.id,
+    }),
+    getInboxSummary({
       supabase,
       userId: user.id,
     }),
@@ -142,6 +157,7 @@ async function getDashboardData(): Promise<DashboardData | null> {
     topOpportunitiesByProfileId,
     draftingSummary,
     sendPipelineSummary,
+    inboxSummary,
   };
 }
 
@@ -275,6 +291,80 @@ async function getSendPipelineSummary(context: {
     sentToday: sentTodayResult.count ?? 0,
     sentThisWeek: sentWeekResult.count ?? 0,
     failedLast7Days: failedResult.count ?? 0,
+  };
+}
+
+async function getInboxSummary(context: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+}): Promise<InboxSummary> {
+  const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const [
+    appUserResult,
+    repliesResult,
+    classificationsResult,
+    pendingReplyDraftsResult,
+    pendingFollowUpsResult,
+  ] = await Promise.all([
+    context.supabase
+      .from("users")
+      .select("inbox_last_polled_at,inbox_poll_paused")
+      .eq("user_id", context.userId)
+      .single(),
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("kind", "reply")
+      .eq("status", "replied")
+      .gte("sent_at", startOfWeek.toISOString()),
+    context.supabase
+      .from("reply_classifications")
+      .select("category")
+      .eq("user_id", context.userId)
+      .gte("created_at", startOfWeek.toISOString()),
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .eq("kind", "reply")
+      .eq("status", "pending_approval"),
+    context.supabase
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", context.userId)
+      .in("kind", ["follow_up_1", "follow_up_2"])
+      .in("status", ["pending_approval", "approved"]),
+  ]);
+
+  for (const result of [
+    appUserResult,
+    repliesResult,
+    classificationsResult,
+    pendingReplyDraftsResult,
+    pendingFollowUpsResult,
+  ]) {
+    if (result.error) {
+      throw new Error(result.error.message);
+    }
+  }
+
+  const categoryMap = new Map<string, number>();
+
+  for (const row of classificationsResult.data ?? []) {
+    categoryMap.set(row.category, (categoryMap.get(row.category) ?? 0) + 1);
+  }
+
+  return {
+    repliesLast7Days: repliesResult.count ?? 0,
+    categoryCounts: [...categoryMap.entries()].map(([category, count]) => ({
+      category,
+      count,
+    })),
+    pendingReplyDrafts: pendingReplyDraftsResult.count ?? 0,
+    pendingFollowUps: pendingFollowUpsResult.count ?? 0,
+    inboxLastPolledAt: appUserResult.data?.inbox_last_polled_at ?? null,
+    inboxPollPaused: appUserResult.data?.inbox_poll_paused ?? false,
   };
 }
 
@@ -616,6 +706,72 @@ export default async function DashboardPage() {
             <Button asChild className="w-fit" variant="outline">
               <a href="/sends">Open send queue</a>
             </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Inbox</CardTitle>
+            <CardDescription>
+              Replies, rate-response drafts, and follow-up work.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.inboxSummary.repliesLast7Days}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Replies, last 7 days
+                </p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.inboxSummary.pendingReplyDrafts}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Reply drafts
+                </p>
+              </div>
+              <div className="rounded-md border px-3 py-3">
+                <p className="text-2xl font-semibold">
+                  {data.inboxSummary.pendingFollowUps}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Pending follow-ups
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Polling: {data.inboxSummary.inboxPollPaused ? "paused" : "active"}{" "}
+              - last polled{" "}
+              {data.inboxSummary.inboxLastPolledAt
+                ? new Date(
+                    data.inboxSummary.inboxLastPolledAt,
+                  ).toLocaleString()
+                : "never"}
+            </p>
+            {data.inboxSummary.categoryCounts.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {data.inboxSummary.categoryCounts.map((item) => (
+                  <Badge key={item.category} variant="secondary">
+                    {item.category}: {item.count}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              <Button asChild className="w-fit" variant="outline">
+                <a href="/replies">Open replies</a>
+              </Button>
+              <Button asChild className="w-fit" variant="outline">
+                <a href="/approvals">Open approvals</a>
+              </Button>
+              <Button asChild className="w-fit" variant="outline">
+                <a href="/sends">Open sends</a>
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
