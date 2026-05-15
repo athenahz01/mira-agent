@@ -558,6 +558,57 @@ export type Database = {
           },
         ]
       }
+      draft_suppressions: {
+        Row: {
+          brand_id: string
+          created_at: string
+          creator_profile_id: string
+          deal_type: string
+          id: string
+          reason: string
+          suppressed_until: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          brand_id: string
+          created_at?: string
+          creator_profile_id: string
+          deal_type: string
+          id?: string
+          reason: string
+          suppressed_until: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          brand_id?: string
+          created_at?: string
+          creator_profile_id?: string
+          deal_type?: string
+          id?: string
+          reason?: string
+          suppressed_until?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "draft_suppressions_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "draft_suppressions_creator_profile_id_fkey"
+            columns: ["creator_profile_id"]
+            isOneToOne: false
+            referencedRelation: "creator_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       email_threads: {
         Row: {
           campaign_id: string | null
@@ -975,6 +1026,7 @@ export type Database = {
           excluded_brand_ids: string[]
           excluded_categories: string[]
           id: string
+          max_drafts_per_day: number
           max_minutes_between_sends: number
           max_sends_per_day: number
           min_minutes_between_sends: number
@@ -995,6 +1047,7 @@ export type Database = {
           excluded_brand_ids?: string[]
           excluded_categories?: string[]
           id?: string
+          max_drafts_per_day?: number
           max_minutes_between_sends?: number
           max_sends_per_day?: number
           min_minutes_between_sends?: number
@@ -1015,6 +1068,7 @@ export type Database = {
           excluded_brand_ids?: string[]
           excluded_categories?: string[]
           id?: string
+          max_drafts_per_day?: number
           max_minutes_between_sends?: number
           max_sends_per_day?: number
           min_minutes_between_sends?: number
